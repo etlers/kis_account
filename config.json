@@ -1,0 +1,23 @@
+{
+    "accounts": [
+      {
+        "owner": "ETLERS",
+        "app_key": "PSKSHiHYLfvNWNj7GbihcbgNKKJsgxtO2H6A",
+        "app_secret": "0m4PS2MJzgbX/BKRE8B1TfDZVK0cwVyCa1EKKUVu8P1j/s7f4kyMDjN8kIWX1NTMnnhlqnPkJWrwU0A++4Qzx8JNSfbxJUHSkH3jHfR9T7+qfgrHUhUC8EvkPfMLzphprubhc58nut1yW42lm2F6RTJCDwgZTxTdTbfeO79hnmtesaVzT7s=",
+        "account_number": "67448707",
+        "stock_code": "229200",
+        "stock_name": "KODEX 150 ETF",
+        "slack_webhook_url": "https://hooks.slack.com/services/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"
+      },
+      {
+        "owner": "SOOJIN",
+        "app_key": "PSE56nv5YaBwOqGK0ePG7KGOZCMptsm74AR8",
+        "app_secret": "gqwZKRrizDaFzkFzb5/gO0B5i19xq7SFwOeTloWQfGyQfMiFRnmyvW9WIC/0JXwXvYWPI0zkpdnjf4d/K4dXildzcAbRCa5tmZqMuvUBAF73JZXuGRs5VAw7hWIB/GLmreiaSLJk7h6dxvn81jgP51yEZ4sTT2MXr8+uacJx3AqdynvGwvU=",
+        "account_number": "67450625",
+        "stock_code": "229200",
+        "stock_name": "KODEX 150 ETF",
+        "slack_webhook_url": "https://hooks.slack.com/services/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"
+      }
+    ]
+  }
+  
