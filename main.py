@@ -16,7 +16,7 @@ args = parser.parse_args()
 
 
 # 거래에 관련한 모든 정보
-with open("config.json", "r") as f:
+with open("../env/config.json", "r") as f:
     config = json.load(f)
 # 계정정보를 기본 이틀러스로 아니면 인자로 받은 계정으로 설정
 owner = args.owner.upper() if args.owner else "SOOJIN"

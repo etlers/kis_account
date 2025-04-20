@@ -11,7 +11,7 @@ DELAY_SEC = 0.5  # 대기 시간 (초)
     
 
 def get_token(account_info):
-    TOKEN_FILE = f"./token/token_cache_{account_info['owner']}.json"
+    TOKEN_FILE = f"../env/token/token_cache_{account_info['owner']}.json"
     
     def save_token(token_data):
         """ 액세스 토큰을 JSON 파일에 저장 """
