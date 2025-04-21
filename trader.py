@@ -6,9 +6,9 @@ import requests
 import com_func as CF
 
 
-BASE_URL = "https://openapi.koreainvestment.com:9443"
+# BASE_URL = "https://openapi.koreainvestment.com:9443"
+# BASE_URL = "https://openapivts.koreainvestment.com:29443"
 DELAY_SEC = 0.5  # 대기 시간 (초)
-    
 
 def get_token(account_info):
     TOKEN_FILE = f"../env/token/token_cache_{account_info['owner']}.json"
@@ -82,35 +82,38 @@ def get_token(account_info):
 # 대표 계정으로 현재가 조회
 def get_current_price(account_info, delay_sec = 0.25, jongmok_code = "229200", jongmok_name = "KODEX 150 ETF"):
     time.sleep(delay_sec) # 대기 시간 추가
-    try:
-        token = get_token(account_info)
-        headers = {
-            "authorization": f"Bearer {token}",
-            "appkey": account_info["app_key"],
-            "appsecret": account_info["app_secret"],
-            "tr_id": "FHKST01010100"
-        }
-        params = {
-            "fid_cond_mrkt_div_code": "J",
-            "fid_input_iscd": jongmok_code
-        }
-        url = f"{BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price"
-        res = requests.get(url, headers=headers, params=params).json()
-        price = res.get("output", {}).get("stck_prpr", "N/A")
-        # print(f"[{account_info['owner']}] {jongmok_name} 현재가: {price}")
-        return int(price.replace(",", "").replace("N/A", "-999"))  # N/A인 경우 0으로 처리
-    except Exception as e:
-        print(f"[{account_info['owner']}] Error: {e}")
-        return -999
+    list_result = CF.set_real_tr_id("", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/quotations/inquire-price'
 
-
-def get_balance(account_info):
     token = get_token(account_info)
     headers = {
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC8434R",
+        "tr_id": "FHKST01010100"
+    }
+    params = {
+        "fid_cond_mrkt_div_code": "J",
+        "fid_input_iscd": jongmok_code
+    }
+    response = requests.get(url, headers=headers, params=params)
+    res = requests.get(url, headers=headers, params=params).json()
+    sise = res.get("output", {}).get("stck_prpr", "-9999")
+    
+    return int(sise)
+
+
+def get_balance(account_info):
+    token = get_token(account_info)
+    list_result = CF.set_real_tr_id("TTTC8434R", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-balance'
+    tr_id = list_result[0]
+
+    headers = {
+        "authorization": f"Bearer {token}",
+        "appkey": account_info["app_key"],
+        "appsecret": account_info["app_secret"],
+        "tr_id": tr_id,
         "custtype": "P",
         "content-type": "application/json"
     }
@@ -127,7 +130,7 @@ def get_balance(account_info):
         "CTX_AREA_FK100": "",
         "CTX_AREA_NK100": ""
     }
-    url = "https://openapi.koreainvestment.com:9443/uapi/domestic-stock/v1/trading/inquire-balance"
+
     res = requests.get(url, headers=headers, params=params).json()
     dict_result = {
         "account": account_info["owner"],
@@ -140,15 +143,18 @@ def get_balance(account_info):
 # 예수금 조회
 def get_deposit(account_info):
     time.sleep(DELAY_SEC)
+    list_result = CF.set_real_tr_id("TTTC8908R", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-psbl-order'
+    tr_id = list_result[0]
+    
     token = get_token(account_info)
-    url = f'{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-psbl-order'
     
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC8908R",
+        "tr_id": tr_id,
     }
 
     params = {
@@ -163,7 +169,7 @@ def get_deposit(account_info):
 
     response = requests.get(url, headers=headers, params=params)
     data = response.json()
-
+    
     deposit = int(data['output']['ord_psbl_cash'])  # 매수 가능 금액
     dict_result = {
         "account": account_info["owner"],
@@ -176,14 +182,16 @@ def get_deposit(account_info):
 def get_stock_info(account_info, alarm='N'):
     time.sleep(DELAY_SEC)
     token = get_token(account_info)
-    url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-balance"
+    list_result = CF.set_real_tr_id("TTTC8434R", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-balance'
+    tr_id = list_result[0]
 
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC8434R", 
+        "tr_id": tr_id, 
     }
 
     params = {
@@ -205,11 +213,11 @@ def get_stock_info(account_info, alarm='N'):
     
     dict_result = {
         "account": account_info["owner"],
-        'stock_cnt' : -999,
-        'stock_avg_prc' : -999,
-        'buy_abl_amt' : -999,
-        'total_eval_amt' : -999,
-        'bf_asset_eval_amt' : -999,
+        'stock_cnt' : 0,
+        'stock_avg_prc' : 0,
+        'buy_abl_amt' : 0,
+        'total_eval_amt' : 0,
+        'bf_asset_eval_amt' : 0,
     }
 
     try:
@@ -224,7 +232,7 @@ def get_stock_info(account_info, alarm='N'):
 
             return dict_result
         else:
-            print(f"❌ 잔고 조회 실패: {response.status_code}")
+            # print(f"❌ 잔고 조회 실패: {response.status_code}")
             return dict_result
     except Exception as e:
         # print("❌ 잔고 조회 실패:", json.dumps(data, indent=2, ensure_ascii=False))
@@ -236,14 +244,16 @@ def get_stock_info(account_info, alarm='N'):
 def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00'):
     time.sleep(DELAY_SEC)
     token = get_token(account_info)
-    url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld"
+    list_result = CF.set_real_tr_id("TTTC8001R", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-daily-ccld'
+    tr_id = list_result[0]
 
     headers = {
         "Content-Type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC8001R",  # (신)TTTC0081R  (구)TTTC8001R
+        "tr_id": tr_id,  # (신)TTTC0081R  (구)TTTC8001R
     }
 
     params = {
@@ -291,21 +301,28 @@ def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00')
 
 # 마지막 매도(또는 매수)의 평균 단가만 가져오기
 def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
-    dict_deal_div = {
-        '매도': '01',
-        '매수': '02',
-    }
-    list_dict_result = get_last_buy_trade(account_info, start_date, end_date, dict_deal_div[div])
-    
-    # 마지막부터 읽고자 역으로 재생성
-    list_dict_result.reverse()
-    avg_prc = int(list_dict_result[0]['AVG_PRC']) if len(list_dict_result) > 0 else 0
+    time.sleep(DELAY_SEC)
 
     dict_result = {
         "account": account_info["owner"],
         "div": div,
-        "last_deal_avg_prc": avg_prc,
+        "last_deal_avg_prc": 0,
     }
+
+    dict_deal_div = {
+        '매도': '01',
+        '매수': '02',
+    }
+
+    try:
+        list_dict_result = get_last_buy_trade(account_info, start_date, end_date, dict_deal_div[div])
+        # 마지막부터 읽고자 역으로 재생성
+        list_dict_result.reverse()
+        avg_prc = int(list_dict_result[0]['AVG_PRC']) if len(list_dict_result) > 0 else 0
+
+        dict_result["last_deal_avg_prc"] = avg_prc
+    except:
+        pass
         
     return dict_result
 
@@ -314,14 +331,16 @@ def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
 def sell_stock(account_info, ord_qty):
     time.sleep(DELAY_SEC)
     token = get_token(account_info)
-    url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
+    list_result = CF.set_real_tr_id("TTTC0801U", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/order-cash'
+    tr_id = list_result[0]
 
     sell_headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC0801U"  # 모의투자 현금 매도 주문
+        "tr_id": tr_id  # 모의투자 현금 매도 주문
     }
 
     sell_payload = {
@@ -338,24 +357,26 @@ def sell_stock(account_info, ord_qty):
     sell_response = requests.post(url, headers=sell_headers, data=json.dumps(sell_payload))
 
     if sell_response.status_code == 200:
-        print(f"✅ {account_info["owner"]}] {account_info["stock_code"]} {ord_qty}주 매도 주문 성공!")
+        print(f"✅ {account_info['owner']}] {account_info['stock_code']} {ord_qty}주 매도 주문 성공!")
         return True
     else:
-        print(f"🚨 {account_info["owner"]}] 매도 주문 실패:", sell_response.json())
+        print(f"🚨 {account_info['owner']}] 매도 주문 실패:", sell_response.json())
         return False
 
 # 매수 처리
 def buy_stock(account_info, ord_qty):
     time.sleep(DELAY_SEC)
     token = get_token(account_info)
-    url = f"{BASE_URL}/uapi/domestic-stock/v1/trading/order-cash"
+    list_result = CF.set_real_tr_id("TTTC0802U", account_info['owner'])
+    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/order-cash'
+    tr_id = list_result[0]
 
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
         "appkey": account_info["app_key"],
         "appsecret": account_info["app_secret"],
-        "tr_id": "TTTC0802U"  # 모의투자 현금 매수 주문
+        "tr_id": tr_id  # 모의투자 현금 매수 주문
     }
 
     order_payload = {

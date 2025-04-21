@@ -67,11 +67,6 @@ def monitor_price():
     EARLY_BUY_CHK_TM = '090300'  # 장초반 급상승 체크 시간
     START_TM_BUY = '091500'  # 매수 시작 시간 기준
     END_DEAL_TM = '151500'  # 종료시각
-    DEC_SELL_RT = 0.0005  # 시간에 따른 절감 수익률 (0.05%)
-    # 계정별 장시작 메세지
-    dict_acc_open_msg = {}
-    # 계정별 마지막 거래 금액
-    dict_acc_last_price = {}
     # 매도 기준 수익률 변경을 위한 파일
     file_nm_sell_rt = 'sell_rt.txt'
     full_path_sell_rt = f'./{file_nm_sell_rt}'
@@ -85,7 +80,6 @@ def monitor_price():
     file_nm_sell = 'direct_sell.txt'
     full_path_sell = f'./{file_nm_sell}'
     # 불리언 변수
-    additional_buy_tf = False  # 추가 매수 여부
     step_down_up_tf = False  # V자 반등 체크
     send_start_msg_tf = False  # 장 시작 메세지 전송 여부
     
@@ -126,6 +120,7 @@ def monitor_price():
         print(f'{position}!! {STOCK_CNT}주 ')
         print(f'{position}!! {STOCK_CNT}주 ')
         print(f'{position}!! {STOCK_CNT}주 ')
+        ord_abl_qty = STOCK_CNT
     else:
         position = 'BUY'
     #------------------------------------------------------------------------
@@ -142,7 +137,9 @@ def monitor_price():
     ####################################################################
     # 시작
     ####################################################################
-    start_price = TR.get_current_price(dict_account)
+    start_price = -9999
+    while start_price == -9999:
+        start_price = TR.get_current_price(dict_account)
     base_price = 0  # 거래 시작 금액으로 하락율 기준
     # 당일 저가 및 고가
     today_low_price = start_price
@@ -185,11 +182,10 @@ def monitor_price():
         print(f"📌 직전 매수: {AVG_WHOLE_BUYING:,}")
     if SELL_AVG_PRICE > 0.0:
         print(f"📌 직전 매도: {SELL_AVG_PRICE:,}")
-    print(f"📌 시작 금액: {start_price:,}")
+    print(f"📌 시작금액: {start_price:,}")
     print('#' * 100)
     #--------------------------------------------------------
     # 불리언 변수
-    additional_buy_tf = False  # 추가 매수 여부
     step_down_up_tf = False  # V자 반등 체크
     send_start_msg_tf = False  # 장 시작 메세지 전송 여부
         
@@ -210,7 +206,7 @@ def monitor_price():
         # 재시작이 아닌 경우만 장 시작 메세지 전송
         if now_dtm < '090500':
             if send_start_msg_tf == False:
-                dict_param = {
+                dict_params = {
                     'start_date': start_date,
                     'end_date': end_date, 
                     'order_type': 'Start!!', 
@@ -220,19 +216,18 @@ def monitor_price():
                     'result':'오픈 알림',
                     'msg': open_msg
                 }
-                CF.make_for_send_msg(dict_account, dict_param)
+                CF.make_for_send_msg(dict_account, dict_params)
                 send_start_msg_tf = True
         ####################################################################
         # 15시 15분이 되면 종료
         if now_dtm > END_DEAL_TM:
             if STOCK_CNT > 0:
                 slack_msg = "⏳ 장 마감 시간 도래, 매도 후 프로그램 종료"
-                # 매도
                 if TR.sell_stock(dict_account, ORDER_QTY):
                     # 직전 매도 평균
                     dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
                     sell_cnt += 1
-                    dict_param = {
+                    dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'SELL', 
@@ -242,10 +237,10 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
             else:
                 slack_msg = "⏳ 장 마감 시간 도래, 매도할 수량 없음. 프로그램 종료"
-                dict_param = {
+                dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'CLOSE', 
@@ -255,7 +250,7 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                CF.make_for_send_msg(dict_account, dict_param)
+                CF.make_for_send_msg(dict_account, dict_params)
             break
 
         # 시세
@@ -275,7 +270,7 @@ def monitor_price():
                 buy_cnt += 1
                 position = 'SELL'
                 os.rename(full_path_buy, f'./file/{file_nm_buy}')
-                dict_param = {
+                dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'BUY', 
@@ -285,7 +280,7 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                CF.make_for_send_msg(dict_account, dict_param)
+                CF.make_for_send_msg(dict_account, dict_params)
         ####################################################################
         # 전일 대비 상승하락 비율
         preday_current_rt = CF.calc_earn_rt(current_price, preday_close_price)
@@ -340,7 +335,7 @@ def monitor_price():
                         AVG_WHOLE_BUYING = dict_buy_avg_prc['last_deal_avg_prc']
                         buy_cnt += 1
                         position = 'SELL'
-                        dict_param = {
+                        dict_params = {
                                 'start_date': start_date,
                                 'end_date': end_date, 
                                 'order_type': 'BUY', 
@@ -350,7 +345,7 @@ def monitor_price():
                                 'result':'',
                                 'msg': slack_msg
                             }
-                        CF.make_for_send_msg(dict_account, dict_param)
+                        CF.make_for_send_msg(dict_account, dict_params)
                         low_price_change_cnt = 0
                         high_price_change_cnt = 0
                         BASE_SELL_RT = 1.007  # 수익률 상향
@@ -381,6 +376,7 @@ def monitor_price():
         # V자 반등.
         # 최소 우선 5개 연속 하락을 한번으로 판단하자
         threshold = 5
+        seq_inc_cnt, seq_dec_cnt = (0, 0)
         # 이전 V자 반등이 없었던 경우
         if step_down_up_tf == False:
             # 최소 50개 이상에서 판단하자
@@ -404,7 +400,7 @@ def monitor_price():
         if os.path.isfile(full_path_sell):
             if STOCK_CNT == 0:
                 slack_msg = f"# 강제 매도. 잔고 없음. 거래 종료"
-                dict_param = {
+                dict_params = {
                     'start_date': start_date,
                     'end_date': end_date, 
                     'order_type': 'CLOSE', 
@@ -414,15 +410,14 @@ def monitor_price():
                     'result':'',
                     'msg': slack_msg
                 }
-                CF.make_for_send_msg(dict_account, dict_param)
+                CF.make_for_send_msg(dict_account, dict_params)
             else:
                 slack_msg = f"✅ 강제 매도. 수익률: {now_earn_rt}%"
-                # 매도
                 if TR.sell_stock(dict_account, ORDER_QTY):
                     # 직전 매도 평균
                     dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
                     sell_cnt += 1
-                    dict_param = {
+                    dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'SELL', 
@@ -432,7 +427,7 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
             # 파일 이동 및 종료
             os.rename(full_path_sell, f'./file/{file_nm_sell}')
             break
@@ -442,12 +437,11 @@ def monitor_price():
         if now_dtm > '140000':
             if STOCK_CNT > 0 and now_earn_rt < -1.5:
                 slack_msg = f"### 손절매도!!! {now_earn_rt}%"
-                # 매도
                 if TR.sell_stock(dict_account, ORDER_QTY):
                     # 직전 매도 평균
                     dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
                     sell_cnt += 1
-                    dict_param = {
+                    dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'SELL', 
@@ -457,7 +451,7 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
                 break
 
         ####################################################################
@@ -481,12 +475,26 @@ def monitor_price():
             print(buy_msg)
             print('#' * 100 )
             #------------------------------------------------------------------------
+            # 매 30분마다 상태를 슬랙으로 전송
+            if now_dtm[2:6] in ['0000','3000']:
+                dict_params = {
+                    'start_date': start_date,
+                    'end_date': end_date, 
+                    'order_type': 'STATUS', 
+                    'qty': 0, 
+                    'price': 0, 
+                    'buy_avg_price': 0,
+                    'result':'',
+                    'msg': buy_msg
+                }
+                CF.make_for_send_msg(dict_account, dict_params)
+            #------------------------------------------------------------------------
             # 13시 30분 이후는 매수하지 않는다. 매도만 한다.
             # 금액만으로 판단이 안됨. 잔고가 있는지 확인해야 함
             if now_dtm > '133000':
                 if STOCK_CNT == 0:
                     slack_msg = f"# 13시 30분 이후 잔고 없음. 거래 종료"
-                    dict_param = {
+                    dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'CLOSE', 
@@ -496,7 +504,7 @@ def monitor_price():
                         'result':'',
                         'msg': slack_msg
                     }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
                     break
                 else:
                     position = 'SELL'
@@ -582,7 +590,7 @@ def monitor_price():
                     AVG_WHOLE_BUYING = dict_buy_avg_prc['last_deal_avg_prc']
                     buy_cnt += 1
                     position = 'SELL'
-                    dict_param = {
+                    dict_params = {
                             'start_date': start_date,
                             'end_date': end_date, 
                             'order_type': 'BUY', 
@@ -592,7 +600,7 @@ def monitor_price():
                             'result':'',
                             'msg': slack_msg
                         }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
                     # 매수 횟수 증가
                     buy_cnt += 1
                     # 매도 진행으로 변경
@@ -633,24 +641,37 @@ def monitor_price():
             sell_msg += f"매수: {AVG_WHOLE_BUYING:,}"
             print(sell_msg)
             #------------------------------------------------------------------------
+            # 매 30분마다 상태를 슬랙으로 전송
+            if now_dtm[2:6] in ['0000','3000']:
+                dict_params = {
+                    'start_date': start_date,
+                    'end_date': end_date, 
+                    'order_type': 'STATUS', 
+                    'qty': 0, 
+                    'price': 0, 
+                    'buy_avg_price': 0,
+                    'result':'',
+                    'msg': sell_msg
+                }
+                CF.make_for_send_msg(dict_account, dict_params)
+            #------------------------------------------------------------------------
             # 매도 조건에 맞으면
             if sell_tf:
-                # 매도
                 if TR.sell_stock(dict_account, ORDER_QTY):
                     # 직전 매도 평균
                     dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
                     sell_cnt += 1
-                    dict_param = {
+                    dict_params = {
                         'start_date': start_date,
                         'end_date': end_date, 
                         'order_type': 'SELL', 
                         'qty': ORDER_QTY, 
                         'price': dict_sell_avg_prc['last_deal_avg_prc'], 
-                        'buy_avg_price': 0,
+                        'buy_avg_price': AVG_WHOLE_BUYING,
                         'result':'',
                         'msg': slack_msg
                     }
-                    CF.make_for_send_msg(dict_account, dict_param)
+                    CF.make_for_send_msg(dict_account, dict_params)
                 else:
                     break
                 # 매수로 변경
@@ -660,7 +681,17 @@ def monitor_price():
 if __name__ == "__main__":
     monitor_price()
     # 당일 수익률 확인  
-    CF.today_deal_result(dict_account, start_date, end_date)
+    dict_params = {
+        'start_date': start_date,
+        'end_date': end_date, 
+        'order_type': 'RESULT', 
+        'qty': 0, 
+        'price': 0, 
+        'buy_avg_price': 0,
+        'result':'',
+        'msg': ''
+    }
+    CF.today_deal_result(dict_account, dict_params)
     # 데이터 저장
     print(df_sise.shape)
-    df_sise.write_csv(f"./data/log_data_{CF.get_current_time().split(' ')[0]}.csv", include_header=True)
+    df_sise.write_csv(f"./data/sise_data_{CF.get_current_time().split(' ')[0]}.csv", include_header=True)

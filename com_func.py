@@ -10,6 +10,16 @@ from bs4 import BeautifulSoup
 import trader as TR
 
 
+
+# 운영, 모의에 맞는 TR_ID 생성
+def set_real_tr_id(tr_id, owner):
+    if owner == 'DEV':
+        BASE_URL = "https://openapivts.koreainvestment.com:29443"
+        return ['V' + tr_id[1:], BASE_URL]
+    else:
+        BASE_URL = "https://openapi.koreainvestment.com:9443"
+        return [tr_id, BASE_URL]
+
 # 수익률 계산
 def calc_earn_rt(now, base):
     if base == 0:
@@ -17,6 +27,43 @@ def calc_earn_rt(now, base):
     else:
         rt = round((now - base) / base * 100, 2)
     return rt
+
+# 증가 감소에 대한 확인
+def check_trend(lst, div='all'):
+    if len(lst) < 5: 
+        return False, False
+    increasing = all(lst[i] <= lst[i + 1] for i in range(len(lst)-1))  # 증가 여부 확인
+    decreasing = all(lst[i] >= lst[i + 1] for i in range(len(lst)-1))  # 감소 여부 확인
+
+    if div == 'all':
+        return increasing, decreasing
+    elif div == 'last_1':
+        # 마지막 상승
+        if lst[-2] < lst[-1]:
+            return "LAST_1_INC"
+        # 마지막 하락
+        elif lst[-2] > lst[-1]:
+            return "LAST_1_DEC"
+        else:
+            return "PASS"
+    elif div == 'last_2':
+        # 마지막 2개의 상승
+        if lst[-3] > lst[-2] and lst[-2] > lst[-1]:
+            return "LAST_2_DEC"
+        # 마지막 2개의 하락
+        elif lst[-3] < lst[-2] and lst[-2] < lst[-1]:
+            return "LAST_2_INC"
+        else:
+            return "PASS"
+    else:
+        # 마지막 3개의 상승
+        if lst[-4] > lst[-3] and lst[-3] > lst[-2] and lst[-2] > lst[-1]:
+            return "LAST_3_DEC"
+        # 마지막 3개의 하락
+        elif lst[-4] < lst[-3] and lst[-3] < lst[-2] and lst[-2] < lst[-1]:
+            return "LAST_3_INC"
+        else:
+            return "PASS"
 
 ####################################################################
 # 현재일시
@@ -29,14 +76,6 @@ def get_current_time(full='N'):
 ####################################################################
 # 지정한 날짜 문자열과 날짜 수를 받아, 이전 날짜를 문자열로 반환하는 함수.
 def get_previous_date(date_str: str, days_before: int, date_format: str = "%Y-%m-%d") -> str:
-    """
-    지정한 날짜 문자열과 날짜 수를 받아, 이전 날짜를 문자열로 반환하는 함수.
-
-    :param date_str: 기준 날짜 (문자열 형식, 예: '2025-03-27')
-    :param days_before: 며칠 전인지 (예: 7)
-    :param date_format: 날짜 포맷 (기본값은 '%Y-%m-%d')
-    :return: 계산된 이전 날짜 (문자열)
-    """
     base_date = datetime.strptime(date_str, date_format)
     previous_date = base_date - timedelta(days=days_before)
     return previous_date.strftime(date_format)
@@ -211,29 +250,6 @@ def get_sise_list_by_high_price(df_sise):
     
     return list(df_sise["PRC"])
 
-####################################################################
-# 매도를 위한 금액 조건 확인
-def check_sell(check_hm, avg_prc, now_prc, base_rt):
-    add_rt = 0.0
-    # 시간에 따른 수익률 절감을 위한 비교 시분 목록
-    list_dec_hm = [
-        '1300','1330','1400','14300','1500'
-    ]
-    # 시간에 따른 수익률 기준의 변경
-    if check_hm in list_dec_hm:
-        # 뒤로 갈수록 할인율이 많아짐
-        for hm in list_dec_hm:
-            add_rt -= list_dec_hm
-            # 적용 후 빠져나감
-            if hm == check_hm: break
-    # 기본으로 설정
-    base_sell_price = int(round(avg_prc * (base_rt + add_rt), 2))
-    # 이상이면 매도 처리
-    if int(now_prc) >= base_sell_price:
-        return True, base_sell_price
-    else:
-        return False, base_sell_price
-
 
 # 매수 수량 계산
 def calc_order_qty(deposit, now_prc):
@@ -301,32 +317,29 @@ def count_up_down_trends(prices, threshold=5):
 
 # 메세지 생성 및 호출
 def make_for_send_msg(dict_account, dict_params):
-    # 기본 메세지 출력
-    print(dict_params['msg'])
     # 슬랙으로 메세지 전송
-    try:
-        if dict_params['order_type'] == 'BUY':
-            send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], dict_params['msg'])
-        elif dict_params['order_type'] == 'SELL':
-            # 직전 매수 평균
-            if dict_params['buy_avg_price'] == 0:
-                deal_earn_rt = 0.0
-            else:
-                deal_earn_rt = round((dict_params['price'] - dict_params['buy_avg_price']) / dict_params['buy_avg_price'] * 100, 2)
-            # 결과 메세지 생성
-            if deal_earn_rt > 0.0:
-                result = 'UP'
-                msg = f'{deal_earn_rt}% 수익!! ^___^'
-            else:
-                result = 'DN'
-                msg = f'{deal_earn_rt}% 손실!! ㅠㅠ'
-
-            send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], result, dict_params['msg'])
+    if dict_params['order_type'] == 'BUY':
+        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], dict_params['msg'])
+    elif dict_params['order_type'] == 'SELL':
+        # 직전 매수 평균
+        if dict_params['buy_avg_price'] == 0:
+            deal_earn_rt = 0.0
         else:
-            send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], dict_params['msg'])
-    except Exception as e:
-        print(f"슬랙 메세지 전송 오류: {e}")
+            deal_earn_rt = round((dict_params['price'] - dict_params['buy_avg_price']) / dict_params['buy_avg_price'] * 100, 2)
+        # 결과 메세지 생성
+        if deal_earn_rt > 0.0:
+            result = 'UP'
+            msg = f'{deal_earn_rt}% 수익!! ^___^'
+        else:
+            result = 'DN'
+            msg = f'{deal_earn_rt}% 손실!! ㅠㅠ'
 
+        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], result, f"{dict_params['msg']} {msg}")
+    else:
+        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']} {msg}")
+    # 기본 메세지 출력
+    print(f"{dict_params['msg']} {msg}")
+    
 # 매도를 위한 금액 조건 확인
 def check_sell(check_hm, avg_prc, now_prc, base_rt):
     add_rt = 0.0
@@ -377,77 +390,88 @@ def calc_deal_profit_rate(account_info, start_date, end_date):
 
 
 # 당일 거래 결과
-def today_deal_result(dict_account, start_date, end_date):
+def today_deal_result(dict_account, dict_params):
     time.sleep(1)
     # 수익률 계산 및 최종 매도금액 저장
-    start_date = get_current_time().split(' ')[0]
-    end_date   = get_current_time().split(' ')[0]
+    today_sell_amt, today_buy_amt, deal_earn_rt, today_sell_avg, today_buy_avg = calc_deal_profit_rate(
+            dict_account, dict_params['start_date'], dict_params['end_date']
+        )
+    # 결과 출력
+    print('#' * 100)
+    print(f'# 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
+    print('#' * 100)
+    profit_amt = today_sell_amt - today_buy_amt
+    # 보유 자산에 대한 결과
+    dict_stock_info = TR.get_stock_info(dict_account)
+    amount_gap = int(dict_stock_info['total_eval_amt']) - int(dict_stock_info['bf_asset_eval_amt'])
     try:
-        today_sell_amt, today_buy_amt, deal_earn_rt, today_sell_avg, today_buy_avg = calc_deal_profit_rate(
-                dict_account, start_date, end_date
-            )
-        # 결과 출력
-        print('#' * 100)
-        print(f'# 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
-        print('#' * 100)
-        profit_amt = today_sell_amt - today_buy_amt
-        # 보유 자산에 대한 결과
-        dict_stock_info = TR.get_stock_info(dict_account)
-        amount_gap = int(dict_stock_info['total_eval_amt']) - int(dict_stock_info['bf_asset_eval_amt'])
         today_amt_rt = round((amount_gap / int(dict_stock_info['bf_asset_eval_amt'])) * 100, 5)
-        # 메세지 생성
-        slack_msg = f"전일 {int(dict_stock_info['bf_asset_eval_amt']):,}원에서 {int(dict_stock_info['total_eval_amt']):,}원으로 "
-        if amount_gap > 0:
-            slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 증가!! ^___^"
-            result = 'UP'
-        else:
-            slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 감소... ㅠㅠ"
-            result = 'DN'
-        # 결과 슬랙으로 전송
-        # send_slack_alert('RESULT', '', 0, 0, result, slack_msg)
-        # 결과 데이터 저장
-        try:
-            df_deal = pl.read_csv(
-                './data/deal_result.csv',
-                schema_overrides={
-                    "DTM": pl.Utf8,
-                    "EARN_RT": pl.Float64,
-                    "ASSET_AMT": pl.Int64,
-                    "EVAL_AMT": pl.Int64,
-                    "DEAL_RT": pl.Float64,
-                    "BUY_AMT": pl.Int64,
-                    "BUY_AVG": pl.Int64,
-                    "SELL_AMT": pl.Int64,
-                    "SELL_AVG": pl.Int64,                    
-                }
-            )
-        except FileNotFoundError:
-            df_deal = pl.DataFrame({
-                "DTM": pl.Series([], pl.Utf8),
-                "EARN_RT": pl.Series([], pl.Float64),
-                "ASSET_AMT": pl.Series([], pl.Int64),
-                "EVAL_AMT": pl.Series([], pl.Int64),
-                "DEAL_RT": pl.Series([], pl.Float64),
-                "BUY_AMT": pl.Series([], pl.Int64),
-                "BUY_AVG": pl.Series([], pl.Int64),
-                "SELL_AMT": pl.Series([], pl.Int64),
-                "SELL_AVG": pl.Series([], pl.Int64),                
-            })
-        # 새 행 (모두 정수값)
-        new_row = pl.DataFrame({
-            "DTM": [str(get_current_time().split(' ')[0])],
-            "EARN_RT": [today_amt_rt],
-            "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
-            "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
-            "DEAL_RT": [deal_earn_rt],
-            "BUY_AMT": [today_buy_amt],
-            "BUY_AVG": [today_buy_avg],
-            "SELL_AMT": [today_sell_amt],
-            "SELL_AVG": [today_sell_avg],            
-        })
-        # 데이터 추가 및 저장
-        df_deal = df_deal.vstack(new_row)
-        df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
-        
-    except Exception as e:
-        print(e)
+    except:
+        today_amt_rt = 0.0
+    # 메세지 생성
+    slack_msg = f"전일 {int(dict_stock_info['bf_asset_eval_amt']):,}원에서 {int(dict_stock_info['total_eval_amt']):,}원으로 "
+    if amount_gap > 0:
+        slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 증가!! ^___^"
+        result = 'UP'
+    else:
+        slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 감소... ㅠㅠ"
+        result = 'DN'
+    # 결과 슬랙으로 전송
+    send_slack_alert('RESULT', dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']} {slack_msg}")
+    # 결과 데이터 저장
+    try:
+        df_deal = pl.read_csv(
+            './data/deal_result.csv',
+            schema_overrides={
+                "OWNER": pl.Utf8,
+                "DTM": pl.Utf8,
+                "EARN_RT": pl.Float64,
+                "ASSET_AMT": pl.Int64,
+                "EVAL_AMT": pl.Int64,
+                "DEAL_RT": pl.Float64,
+                "BUY_AMT": pl.Int64,
+                "BUY_AVG": pl.Int64,
+                "SELL_AMT": pl.Int64,
+                "SELL_AVG": pl.Int64,                    
+            }
+        )
+    except FileNotFoundError:
+        df_deal = pl.DataFrame({
+            "OWNER": [],
+            "DTM": [],
+            "EARN_RT": [],
+            "ASSET_AMT": [],
+            "EVAL_AMT": [],
+            "DEAL_RT": [],
+            "BUY_AMT": [],
+            "BUY_AVG": [],
+            "SELL_AMT": [],
+            "SELL_AVG": [],
+        }).with_columns([
+            pl.col("OWNER").cast(pl.Utf8),
+            pl.col("DTM").cast(pl.Utf8),
+            pl.col("EARN_RT").cast(pl.Float64),
+            pl.col("ASSET_AMT").cast(pl.Int64),
+            pl.col("EVAL_AMT").cast(pl.Int64),
+            pl.col("DEAL_RT").cast(pl.Float64),
+            pl.col("BUY_AMT").cast(pl.Int64),
+            pl.col("BUY_AVG").cast(pl.Int64),
+            pl.col("SELL_AMT").cast(pl.Int64),
+            pl.col("SELL_AVG").cast(pl.Int64),
+        ])
+    # 새 행 (모두 정수값)
+    new_row = pl.DataFrame({
+        "OWNER": [dict_account['owner']],
+        "DTM": [str(get_current_time().split(' ')[0])],
+        "EARN_RT": [today_amt_rt],
+        "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
+        "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
+        "DEAL_RT": [deal_earn_rt],
+        "BUY_AMT": [today_buy_amt],
+        "BUY_AVG": [today_buy_avg],
+        "SELL_AMT": [today_sell_amt],
+        "SELL_AVG": [today_sell_avg],            
+    })
+    # 데이터 추가 및 저장
+    df_deal = df_deal.vstack(new_row)
+    df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
