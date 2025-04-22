@@ -72,9 +72,8 @@ if __name__ == '__main__':
     accounts = config["accounts"]
 
     # 계정정보를 기본 이틀러스로 아니면 인자로 받은 계정으로 설정
-    owner = "SOOJIN"
     for dict_value in config["accounts"]:
-        if dict_value['owner'] == owner:
+        if dict_value['owner'] == 'DEV':
             dict_account = dict_value
             break
 

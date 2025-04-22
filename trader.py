@@ -29,7 +29,10 @@ def get_token(account_info):
 
     def request_new_token():
         """ 새로운 Access Token을 요청 """
-        url = f"{BASE_URL}/oauth2/tokenP"
+        list_result = CF.set_real_tr_id("", account_info['owner'])
+        # url = f'{list_result[1]}/uapi/domestic-stock/v1/quotations/inquire-price'
+
+        url = f"{list_result[1]}/oauth2/tokenP"
         print(url)
         payload = {
             "grant_type": "client_credentials",

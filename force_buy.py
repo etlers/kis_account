@@ -22,6 +22,7 @@ for dict_value in config["accounts"]:
         dict_account = dict_value
         break
 
+
 # 일자 파라미터. 당일
 start_date = CF.get_current_time().split(' ')[0]
 end_date   = CF.get_current_time().split(' ')[0]
@@ -30,8 +31,8 @@ end_date   = CF.get_current_time().split(' ')[0]
 # 거래 시작
 # tail -f /Users/etlers/Documents/kis_account/cron_$(date +%Y%m%d).log
 if __name__ == '__main__':
-    if TR.sell_stock(dict_account, '1'):
-        # 직전 매도 평균
-        dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
-        print(dict_sell_avg_prc)
+    if TR.buy_stock(dict_account, '1'):
+        dict_buy_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매수')
+        AVG_WHOLE_BUYING = dict_buy_avg_prc['last_deal_avg_prc']
+        print(AVG_WHOLE_BUYING)
                     

@@ -157,7 +157,7 @@ def get_previous_trading_day(stock_code="005930"):
     
 ####################################################################
 # 슬랙으로 메세지 보내기
-def send_slack_alert(order_type, dict_account, quantity, price, result, msg):
+def send_slack_alert(order_type, dict_account, qty, price, result, msg):
     icon_ord = {
         "BUY": "🟢",
         "SELL": "🔴",
@@ -169,7 +169,7 @@ def send_slack_alert(order_type, dict_account, quantity, price, result, msg):
     }.get(result, "🔔")
     
     if order_type in ('BUY','SELL'):
-        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{dict_account['stock_name']}`\n수량: `{quantity}`주\n가격: `{price:,}`원"
+        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{dict_account['stock_name']}`\n수량: `{qty}`주\n가격: `{price:,}`원"
         text = text + '\n\n' + f"{icon_result} {msg}"
     else:
         text = f"{icon_result} {msg}"
@@ -256,7 +256,7 @@ def calc_order_qty(deposit, now_prc):
     try:
         fee_rate = 0.3  # 0.3%
         unit_price = now_prc * (1 + fee_rate)
-        return str(int(deposit // unit_price))
+        return str(int(deposit // unit_price) - 1)
     except:
         return '0'
     
@@ -336,9 +336,9 @@ def make_for_send_msg(dict_account, dict_params):
 
         send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], result, f"{dict_params['msg']} {msg}")
     else:
-        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']} {msg}")
+        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']}")
     # 기본 메세지 출력
-    print(f"{dict_params['msg']} {msg}")
+    print(f"{dict_params['msg']}")
     
 # 매도를 위한 금액 조건 확인
 def check_sell(check_hm, avg_prc, now_prc, base_rt):
