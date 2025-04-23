@@ -304,8 +304,6 @@ def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00')
 
 # 마지막 매도(또는 매수)의 평균 단가만 가져오기
 def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
-    time.sleep(DELAY_SEC)
-
     dict_result = {
         "account": account_info["owner"],
         "div": div,
@@ -367,7 +365,7 @@ def sell_stock(account_info, ord_qty):
         return False
 
 # 매수 처리
-def buy_stock(account_info, ord_qty):
+def buy_stock(account_info, ord_qty, ORD_DVSN='01', ORD_UNPR='0'):
     time.sleep(DELAY_SEC)
     token = get_token(account_info)
     list_result = CF.set_real_tr_id("TTTC0802U", account_info['owner'])
@@ -387,8 +385,8 @@ def buy_stock(account_info, ord_qty):
         "ACNT_PRDT_CD": '01',
         "PDNO": account_info['stock_code'],  # 종목코드
         "ORD_QTY": ord_qty,  # 주문수량
-        "ORD_UNPR": "0",  # 시장가는 0 입력
-        "ORD_DVSN": '01',  # 시장가 주문 (01)
+        "ORD_UNPR": ORD_UNPR,  # 시장가는 0 입력
+        "ORD_DVSN": ORD_DVSN,  # 시장가 주문 (01)
         "ORD_PRCS_DVSN": "01",  # 주문처리구분 (01: 시장가)
         "CMA_EVLU_AMT_ICLD_YN": "N",  # CMA 평가금액 포함 여부
         "OSLP_YN": "N"  # 공매도 여부 (N: 일반 매수)

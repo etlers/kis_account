@@ -30,8 +30,12 @@ end_date   = CF.get_current_time().split(' ')[0]
 # 거래 시작
 # tail -f /Users/etlers/Documents/kis_account/cron_$(date +%Y%m%d).log
 if __name__ == '__main__':
-    if TR.sell_stock(dict_account, '1'):
-        # 직전 매도 평균
-        dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매도')
-        print(dict_sell_avg_prc)
+    # if TR.sell_stock(dict_account, '1'):
+    #     # 직전 매도 평균
+    # dict_sell_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매수')
+    # print(dict_account)
+    dict_result = TR.get_stock_info(dict_account, alarm='N')
+    print(dict_result)
+    dict_result = TR.get_deposit(dict_account)
+    print(dict_result)
                     

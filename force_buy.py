@@ -31,8 +31,31 @@ end_date   = CF.get_current_time().split(' ')[0]
 # 거래 시작
 # tail -f /Users/etlers/Documents/kis_account/cron_$(date +%Y%m%d).log
 if __name__ == '__main__':
-    if TR.buy_stock(dict_account, '1'):
-        dict_buy_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매수')
-        AVG_WHOLE_BUYING = dict_buy_avg_prc['last_deal_avg_prc']
-        print(AVG_WHOLE_BUYING)
+    dict_info = {
+        'ETLERS':'60',
+        # 'SOOJIN':'3',
+    }
+
+    # 시작
+    while True:
+        # 현재시각
+        now_dtm = CF.get_current_time().split(' ')[1]
+        # 8시 20분 장전 시간외거래 이전 대기
+        if now_dtm < '082000':
+            time.sleep(0.5)
+            continue
+
+        for owner, qty in dict_info.items():
+            print(owner, qty)
+            for dict_value in config["accounts"]:
+                if dict_value['owner'] == owner:
+                    dict_account = dict_value
+                    # 장전거래, 어제 종가
+                    if TR.buy_stock(dict_account, qty, '05'):
+                        dict_buy_avg_prc = TR.last_deal_avg_price(dict_account, start_date, end_date, div='매수')
+                        AVG_WHOLE_BUYING = dict_buy_avg_prc['last_deal_avg_prc']
+                        CF.send_slack_alert("BUY", dict_account, qty, AVG_WHOLE_BUYING, '', '주문성공')
+                        print(f"{owner} : {AVG_WHOLE_BUYING:,}")
+                break
+            break
                     

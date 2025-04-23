@@ -10,6 +10,12 @@ from bs4 import BeautifulSoup
 import trader as TR
 
 
+# 로그 파일로 생성
+def save_to_log_file(owner, data):
+    fnm = f"./logs/{get_current_time(full='Y').split(' ')[0]}.log"
+    with open(fnm, 'a', encoding='utf-8-sig') as log_file:
+        log_file.write(data)
+
 
 # 운영, 모의에 맞는 TR_ID 생성
 def set_real_tr_id(tr_id, owner):
@@ -343,7 +349,7 @@ def make_for_send_msg(dict_account, dict_params):
 # 매도를 위한 금액 조건 확인
 def check_sell(check_hm, avg_prc, now_prc, base_rt):
     add_rt = 0.0
-# 시간에 따른 수익률 절감을 위한 비교 시분 목록. 최대 0.3% 빠짐
+    # 시간에 따른 수익률 절감을 위한 비교 시분 목록. 최대 0.3% 빠짐
     if check_hm > '1330':
         add_rt += 0.001
     if check_hm > '1430':
