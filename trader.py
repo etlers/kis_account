@@ -5,99 +5,25 @@ import requests
 
 import com_func as CF
 
-
-# BASE_URL = "https://openapi.koreainvestment.com:9443"
-# BASE_URL = "https://openapivts.koreainvestment.com:29443"
 DELAY_SEC = 0.5  # 대기 시간 (초)
-
-def get_token(account_info):
-    TOKEN_FILE = f"../env/token/token_cache_{account_info['owner']}.json"
-    
-    def save_token(token_data):
-        """ 액세스 토큰을 JSON 파일에 저장 """
-        with open(TOKEN_FILE, "w") as f:
-            json.dump(token_data, f)
-
-
-    def load_token():
-        """ JSON 파일에서 액세스 토큰을 불러옴 """
-        if os.path.exists(TOKEN_FILE):
-            with open(TOKEN_FILE, "r") as f:
-                return json.load(f)
-        return None
-
-
-    def request_new_token():
-        """ 새로운 Access Token을 요청 """
-        list_result = CF.set_real_tr_id("", account_info['owner'])
-        # url = f'{list_result[1]}/uapi/domestic-stock/v1/quotations/inquire-price'
-
-        url = f"{list_result[1]}/oauth2/tokenP"
-        print(url)
-        payload = {
-            "grant_type": "client_credentials",
-            "appkey": account_info['app_key'],
-            "appsecret": account_info['app_secret'],
-        }
-        headers = {"content-type": "application/json"}
-        
-        response = requests.post(url, headers=headers, data=json.dumps(payload))
-        data = response.json()
-        
-        if "access_token" in data:
-            access_token = data["access_token"]
-            expires_in = int(data.get("expires_in", 3600))  # 만료 시간 (1시간)
-            expires_at = time.time() + expires_in - 10  # 안전하게 10초 전 갱신
-
-            token_data = {
-                "access_token": access_token,
-                "expires_at": expires_at
-            }
-            save_token(token_data)
-
-            print("✅ 새로운 Access Token 저장 완료")
-            return access_token
-        else:
-            print("❌ Access Token 발급 실패:", data)
-            return None
-        
-
-    def get_access_token():
-        """ Access Token을 불러오거나 만료되었으면 새로 발급 """
-        token_data = load_token()
-
-        if token_data:
-            expire_time = token_data.get("expires_at", 0)
-            current_time = time.time()
-
-            # ✅ 기존 토큰이 아직 유효하면 재사용
-            if current_time < expire_time:
-                # print("🔑 기존 Access Token 재사용")
-                return token_data["access_token"]
-
-        print("🔄 Access Token 새로 발급 중...")
-        return request_new_token()
-    
-    token = get_access_token()
-    return token
 
 
 # 대표 계정으로 현재가 조회
-def get_current_price(account_info, delay_sec = 0.25, jongmok_code = "229200", jongmok_name = "KODEX 150 ETF"):
-    time.sleep(delay_sec) # 대기 시간 추가
-    list_result = CF.set_real_tr_id("", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/quotations/inquire-price'
+def get_current_price(base_url, app_key, app_secret, token, stock_code):
+    time.sleep(DELAY_SEC)
 
-    token = get_token(account_info)
+    url = f'{base_url}/uapi/domestic-stock/v1/quotations/inquire-price'
+    tr_id = "FHKST01010100"
+
     headers = {
         "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
-        "tr_id": "FHKST01010100"
+        "appkey": app_key,
+        "appsecret": app_secret,
+        "tr_id": tr_id
     }
     params = {
         "fid_cond_mrkt_div_code": "J",
-        "fid_input_iscd": jongmok_code
+        "fid_input_iscd": stock_code
     }
     response = requests.get(url, headers=headers, params=params)
     res = requests.get(url, headers=headers, params=params).json()
@@ -106,99 +32,60 @@ def get_current_price(account_info, delay_sec = 0.25, jongmok_code = "229200", j
     return int(sise)
 
 
-def get_balance(account_info):
-    token = get_token(account_info)
-    list_result = CF.set_real_tr_id("TTTC8434R", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-balance'
-    tr_id = list_result[0]
-
-    headers = {
-        "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
-        "tr_id": tr_id,
-        "custtype": "P",
-        "content-type": "application/json"
-    }
-    params = {
-        "CANO": account_info["account_number"],
-        "ACNT_PRDT_CD": '01',
-        "AFHR_FLPR_YN": "N",
-        "OFL_YN": "",
-        "INQR_DVSN": "02",
-        "UNPR_DVSN": "01",
-        "FUND_STTL_ICLD_YN": "N",
-        "FNCG_AMT_AUTO_RDPT_YN": "N",
-        "PRCS_DVSN": "01",
-        "CTX_AREA_FK100": "",
-        "CTX_AREA_NK100": ""
-    }
-
-    res = requests.get(url, headers=headers, params=params).json()
-    dict_result = {
-        "account": account_info["owner"],
-        "balance": res.get("output1", [])
-    }
-
-    return dict_result
-
-
 # 예수금 조회
-def get_deposit(account_info):
+def get_deposit(owner, base_url, app_key, app_secret, acc_no, stock_code, token):
     time.sleep(DELAY_SEC)
-    list_result = CF.set_real_tr_id("TTTC8908R", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-psbl-order'
-    tr_id = list_result[0]
-    
-    token = get_token(account_info)
+
+    url = f'{base_url}/uapi/domestic-stock/v1/trading/inquire-psbl-order'
+    tr_id = "TTTC8908R"
+    tr_id = CF.set_real_tr_id(tr_id) if owner == 'DEV' else tr_id
     
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
+        "appkey": app_key,
+        "appsecret": app_secret,
         "tr_id": tr_id,
     }
 
     params = {
-        "CANO": account_info["account_number"],
+        "CANO": acc_no,
         "ACNT_PRDT_CD": "01",
-        "PDNO": account_info["stock_code"],
+        "PDNO": stock_code,
         "ORD_UNPR": "0",
         "ORD_DVSN": "01",
         "CMA_EVLU_AMT_ICLD_YN": "N",
         "OVRS_ICLD_YN": "N"
         }
-
-    response = requests.get(url, headers=headers, params=params)
-    data = response.json()
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        data = response.json()
+        
+        deposit = int(data['output']['ord_psbl_cash'])  # 매수 가능 금액
+    except:
+        deposit = 0
     
-    deposit = int(data['output']['ord_psbl_cash'])  # 매수 가능 금액
-    dict_result = {
-        "account": account_info["owner"],
-        "deposit": deposit,
-    }
-    return dict_result
+    return deposit
 
 
 # 매도를 위한 계좌 수량 추출
-def get_stock_info(account_info, alarm='N'):
+def get_stock_info(owner, base_url, app_key, app_secret, acc_no, token):
     time.sleep(DELAY_SEC)
-    token = get_token(account_info)
-    list_result = CF.set_real_tr_id("TTTC8434R", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-balance'
-    tr_id = list_result[0]
+
+    url = f'{base_url}/uapi/domestic-stock/v1/trading/inquire-balance'
+    tr_id = "TTTC8434R"
+    tr_id = CF.set_real_tr_id(tr_id) if owner == 'DEV' else tr_id
 
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
+        "appkey": app_key,
+        "appsecret": app_secret,
         "tr_id": tr_id, 
     }
 
     params = {
-        "CANO": account_info["account_number"],
+        "CANO": acc_no,
         "ACNT_PRDT_CD": '01',
         "AFHR_FLPR_YN": "N",  # 시간외 단일가 여부
         "OFL_YN": "N",  # 오프라인 여부
@@ -215,8 +102,8 @@ def get_stock_info(account_info, alarm='N'):
     data = response.json()
     
     dict_result = {
-        "account": account_info["owner"],
-        'stock_cnt' : 0,
+        "account": owner,
+        'stock_qty' : 0,
         'stock_avg_prc' : 0,
         'buy_abl_amt' : 0,
         'total_eval_amt' : 0,
@@ -226,7 +113,7 @@ def get_stock_info(account_info, alarm='N'):
     try:
         if response.status_code == 200:
             # 거래를 위한 재고 및 매수 가능금액
-            dict_result['stock_cnt'] = int(float(data['output1'][0]['hldg_qty']))
+            dict_result['stock_qty'] = int(float(data['output1'][0]['hldg_qty']))
             dict_result['stock_avg_prc'] = int(float(data['output1'][0]['pchs_avg_pric']))
             # 거래 종료에 대한 통계 
             dict_result['buy_abl_amt'] = data['output2'][0]['dnca_tot_amt']
@@ -244,23 +131,26 @@ def get_stock_info(account_info, alarm='N'):
 
 
 # 일자별 매매 체결내역 조회
-def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00'):
+def get_last_buy_trade(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN, SLL_BUY_DVSN_CD='00'):
     time.sleep(DELAY_SEC)
-    token = get_token(account_info)
-    list_result = CF.set_real_tr_id("TTTC8001R", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/inquire-daily-ccld'
-    tr_id = list_result[0]
+
+    if owner == 'DEV':
+        return None
+
+    url = f'{BASE_URL}/uapi/domestic-stock/v1/trading/inquire-daily-ccld'
+    tr_id = "TTTC8001R"
+    tr_id = CF.set_real_tr_id(tr_id) if owner == 'DEV' else tr_id
 
     headers = {
         "Content-Type": "application/json",
-        "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
+        "authorization": f"Bearer {ACCESS_TOKEN}",
+        "appkey": APP_KEY,
+        "appsecret": APP_SECRET,
         "tr_id": tr_id,  # (신)TTTC0081R  (구)TTTC8001R
     }
 
     params = {
-        "CANO": account_info["account_number"],
+        "CANO": ACC_NO,
         "ACNT_PRDT_CD": '01',
         "INQR_STRT_DT": start_date,
         "INQR_END_DT": end_date,
@@ -278,7 +168,7 @@ def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00')
 
     response = requests.get(url, headers=headers, params=params)
     data = response.json()
-    
+    print(data)
     i = 0
     list_dict_sell = []
     for dict_data in data['output1']:
@@ -303,9 +193,9 @@ def get_last_buy_trade(account_info, start_date, end_date, SLL_BUY_DVSN_CD='00')
 
 
 # 마지막 매도(또는 매수)의 평균 단가만 가져오기
-def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
+def last_deal_avg_price(owner, base_url, app_key, app_secret, acc_no, token, start_date, end_date, div='매수'):
     dict_result = {
-        "account": account_info["owner"],
+        "account": owner,
         "div": div,
         "last_deal_avg_prc": 0,
     }
@@ -314,9 +204,15 @@ def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
         '매도': '01',
         '매수': '02',
     }
-
+    
+    if owner == 'DEV':
+        return dict_result
+    
     try:
-        list_dict_result = get_last_buy_trade(account_info, start_date, end_date, dict_deal_div[div])
+        list_dict_result = get_last_buy_trade(
+                owner, base_url, app_key, app_secret, acc_no, token, start_date, end_date, dict_deal_div[div]
+            )
+        
         # 마지막부터 읽고자 역으로 재생성
         list_dict_result.reverse()
         avg_prc = int(list_dict_result[0]['AVG_PRC']) if len(list_dict_result) > 0 else 0
@@ -329,25 +225,25 @@ def last_deal_avg_price(account_info, start_date, end_date, div='매수'):
 
 
 # 전량 시장가 매도
-def sell_stock(account_info, ord_qty):
+def sell_stock(owner, base_url, app_key, app_secret, acc_no, stock_code, ord_qty, token):
     time.sleep(DELAY_SEC)
-    token = get_token(account_info)
-    list_result = CF.set_real_tr_id("TTTC0801U", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/order-cash'
-    tr_id = list_result[0]
+
+    url = f'{base_url}/uapi/domestic-stock/v1/trading/order-cash'
+    tr_id = "TTTC0801U"
+    tr_id = CF.set_real_tr_id(tr_id) if owner == 'DEV' else tr_id
 
     sell_headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
+        "appkey": app_key,
+        "appsecret": app_secret,
         "tr_id": tr_id  # 모의투자 현금 매도 주문
     }
 
     sell_payload = {
-        "CANO": account_info["account_number"],
+        "CANO": acc_no,
         "ACNT_PRDT_CD": '01',
-        "PDNO": account_info["stock_code"],  # 종목 코드
+        "PDNO": stock_code,  # 종목 코드
         "ORD_QTY": ord_qty,  # 보유 수량 전체 매도
         "ORD_UNPR": "0",  # 시장가 주문
         "ORD_DVSN": "01",  # 시장가 매도
@@ -358,39 +254,41 @@ def sell_stock(account_info, ord_qty):
     sell_response = requests.post(url, headers=sell_headers, data=json.dumps(sell_payload))
 
     if sell_response.status_code == 200:
-        print(f"✅ {account_info['owner']}] {account_info['stock_code']} {ord_qty}주 매도 주문 성공!")
+        print(f"✅ {owner}] {stock_code} {ord_qty}주 매도 주문 성공!")
         return True
     else:
-        print(f"🚨 {account_info['owner']}] 매도 주문 실패:", sell_response.json())
+        print(f"🚨 {owner}] 매도 주문 실패:", sell_response.json())
         return False
 
+
 # 매수 처리
-def buy_stock(account_info, ord_qty, ORD_DVSN='01', ORD_UNPR='0'):
+def buy_stock(owner, base_url, app_key, app_secret, acc_no, stock_code, ord_qty, token):
     time.sleep(DELAY_SEC)
-    token = get_token(account_info)
-    list_result = CF.set_real_tr_id("TTTC0802U", account_info['owner'])
-    url = f'{list_result[1]}/uapi/domestic-stock/v1/trading/order-cash'
-    tr_id = list_result[0]
+
+    url = f'{base_url}/uapi/domestic-stock/v1/trading/order-cash'
+    tr_id = "TTTC0802U"
+    tr_id = CF.set_real_tr_id(tr_id) if owner == 'DEV' else tr_id
 
     headers = {
         "content-type": "application/json",
         "authorization": f"Bearer {token}",
-        "appkey": account_info["app_key"],
-        "appsecret": account_info["app_secret"],
+        "appkey": app_key,
+        "appsecret": app_secret,
         "tr_id": tr_id  # 모의투자 현금 매수 주문
     }
 
     order_payload = {
-        "CANO": account_info["account_number"],  # 계좌번호
+        "CANO": acc_no,  # 계좌번호
         "ACNT_PRDT_CD": '01',
-        "PDNO": account_info['stock_code'],  # 종목코드
+        "PDNO": stock_code,  # 종목코드
         "ORD_QTY": ord_qty,  # 주문수량
-        "ORD_UNPR": ORD_UNPR,  # 시장가는 0 입력
-        "ORD_DVSN": ORD_DVSN,  # 시장가 주문 (01)
+        "ORD_UNPR": '0',  # 시장가는 0 입력
+        "ORD_DVSN": '01',  # 시장가 주문 (01)
         "ORD_PRCS_DVSN": "01",  # 주문처리구분 (01: 시장가)
         "CMA_EVLU_AMT_ICLD_YN": "N",  # CMA 평가금액 포함 여부
         "OSLP_YN": "N"  # 공매도 여부 (N: 일반 매수)
     }
+    print(order_payload)
 
     order_response = requests.post(url, headers=headers, data=json.dumps(order_payload))
 

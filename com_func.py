@@ -1,6 +1,6 @@
 import polars as pl
 import requests
-import json
+import os, json
 import time
 from datetime import datetime, timedelta
 from itertools import groupby
@@ -10,23 +10,368 @@ from bs4 import BeautifulSoup
 import trader as TR
 
 
-# 로그 파일로 생성
-def save_to_log_file(owner, data):
-    fnm = f"./logs/{get_current_time(full='Y').split(' ')[0]}.log"
-    with open(fnm, 'a', encoding='utf-8-sig') as log_file:
-        log_file.write(data)
+# 투자자 거래정보 
+def get_owner_config(owner="SOOJIN"):
+    # 거래에 관련한 모든 정보
+    with open("../env/config.json", "r") as f:
+        config = json.load(f)
+    # 계정정보를 기본 이틀러스로 아니면 인자로 받은 계정으로 설정
+    for dict_value in config["accounts"]:
+        if dict_value['owner'] == owner:
+            return dict_value
 
 
 # 운영, 모의에 맞는 TR_ID 생성
-def set_real_tr_id(tr_id, owner):
-    if owner == 'DEV':
-        BASE_URL = "https://openapivts.koreainvestment.com:29443"
-        return ['V' + tr_id[1:], BASE_URL]
-    else:
-        BASE_URL = "https://openapi.koreainvestment.com:9443"
-        return [tr_id, BASE_URL]
+def set_real_tr_id(tr_id):
+    return 'V' + tr_id[1:]
 
-# 수익률 계산
+
+# 토큰 발행
+def get_token(owner, base_url, app_key, app_secret):
+    TOKEN_FILE = f"../env/token/token_cache_{owner}.json"
+    
+    def save_token(token_data):
+        """ 액세스 토큰을 JSON 파일에 저장 """
+        with open(TOKEN_FILE, "w") as f:
+            json.dump(token_data, f)
+
+
+    def load_token():
+        """ JSON 파일에서 액세스 토큰을 불러옴 """
+        if os.path.exists(TOKEN_FILE):
+            with open(TOKEN_FILE, "r") as f:
+                return json.load(f)
+        return None
+
+
+    def request_new_token():
+        """ 새로운 Access Token을 요청 """
+        url = f"{base_url}/oauth2/tokenP"
+        print(url)
+        payload = {
+            "grant_type": "client_credentials",
+            "appkey": app_key,
+            "appsecret": app_secret,
+        }
+        headers = {"content-type": "application/json"}
+        
+        response = requests.post(url, headers=headers, data=json.dumps(payload))
+        data = response.json()
+        
+        if "access_token" in data:
+            access_token = data["access_token"]
+            expires_in = int(data.get("expires_in", 3600))  # 만료 시간 (1시간)
+            expires_at = time.time() + expires_in - 10  # 안전하게 10초 전 갱신
+
+            token_data = {
+                "access_token": access_token,
+                "expires_at": expires_at
+            }
+            save_token(token_data)
+
+            print("✅ 새로운 Access Token 저장 완료")
+            return access_token
+        else:
+            print("❌ Access Token 발급 실패:", data)
+            return None
+        
+
+    def get_access_token():
+        """ Access Token을 불러오거나 만료되었으면 새로 발급 """
+        token_data = load_token()
+
+        if token_data:
+            expire_time = token_data.get("expires_at", 0)
+            current_time = time.time()
+
+            # ✅ 기존 토큰이 아직 유효하면 재사용
+            if current_time < expire_time:
+                # print("🔑 기존 Access Token 재사용")
+                return token_data["access_token"]
+
+        print("🔄 Access Token 새로 발급 중...")
+        return request_new_token()
+    
+    token = get_access_token()
+    return token
+
+    
+# 현재일시
+def get_current_time(full='N'):
+    if full == 'Y':
+        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        return datetime.now().strftime("%Y%m%d %H%M%S")
+    
+# 지정한 날짜 문자열과 날짜 수를 받아, 이전 날짜를 문자열로 반환하는 함수.
+def get_previous_date(date_str: str, days_before: int, date_format: str = "%Y-%m-%d") -> str:
+    """
+    지정한 날짜 문자열과 날짜 수를 받아, 이전 날짜를 문자열로 반환하는 함수.
+
+    :param date_str: 기준 날짜 (문자열 형식, 예: '2025-03-27')
+    :param days_before: 며칠 전인지 (예: 7)
+    :param date_format: 날짜 포맷 (기본값은 '%Y-%m-%d')
+    :return: 계산된 이전 날짜 (문자열)
+    """
+    base_date = datetime.strptime(date_str, date_format)
+    previous_date = base_date - timedelta(days=days_before)
+    return previous_date.strftime(date_format)
+
+
+# 네이버 증권에서 특정 종목의 어제 상승률을 가져오는 함수
+def get_naver_stock_yesterday_change(stock_code):
+    url = f"https://finance.naver.com/item/sise.naver?code={stock_code}"
+
+    # 웹 페이지 가져오기
+    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
+    if response.status_code != 200:
+        return f"Error: Unable to fetch data (Status Code {response.status_code})"
+
+    # HTML 파싱
+    soup = BeautifulSoup(response.text, "html.parser")
+
+    try:
+        # 현재가 가져오기
+        price_now_element = soup.select_one("p.no_today span.blind")
+        if price_now_element:
+            price_now = float(price_now_element.text.strip().replace(',', ''))
+        else:
+            return "Error: Cannot find current price"
+
+        # 전일 종가 가져오기
+        price_prev_element = soup.select("table.no_info tr")[0].select("td")[0].select_one("span.blind")
+        if price_prev_element:
+            price_prev = float(price_prev_element.text.strip().replace(',', ''))
+        else:
+            return "Error: Cannot find previous close price"
+
+        # 상승률 직접 계산
+        change_rate = ((price_now - price_prev) / price_prev) * 100
+
+        dict_result = {
+            "현재가": price_now,
+            "전일 종가": price_prev,
+            "어제 상승률 (%)": round(change_rate, 2)
+        }
+
+        print(dict_result)
+
+        return dict_result['어제 상승률 (%)'], dict_result['전일 종가']
+    
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+# 전 거래일 추출 - 기본 삼성전자로 함
+def get_previous_trading_day(stock_code="005930"):
+    import datetime
+
+    url = f"https://finance.naver.com/item/sise_day.nhn?code={stock_code}"
+    headers = {'User-Agent': 'Mozilla/5.0'}
+
+    res = requests.get(url, headers=headers)
+    soup = BeautifulSoup(res.text, 'html.parser')
+
+    # 날짜 리스트 파싱
+    dates = []
+    for row in soup.select('table.type2 tr'):
+        cols = row.find_all('td')
+        if len(cols) >= 6:
+            date_text = cols[0].get_text(strip=True)
+            try:
+                date_obj = datetime.datetime.strptime(date_text, "%Y.%m.%d")
+                dates.append(date_obj.date())
+            except Exception as e:
+                print(e)
+                continue
+
+    # 최신 날짜 기준 정렬 후 두 번째 값이 전 거래일
+    dates = sorted(list(set(dates)), reverse=True)
+    if len(dates) >= 2:
+        return dates[1]  # 두 번째 날짜가 전 거래일
+    else:
+        return None
+    
+
+# 슬랙으로 메세지 보내기
+def send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url):
+    icon_ord = {
+        "BUY": "🟢",
+        "SELL": "🔴",
+    }.get(order_type, "🔔")
+
+    icon_result = {
+        "UP": "📈",
+        "DN": "📉"
+    }.get(result, "🔔")
+    
+    if order_type in ('BUY','SELL'):
+        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{stock_code}`\n수량: `{ord_qty}`주\n가격: `{price:,}`원"
+        text = text + '\n\n' + f"{icon_result} {msg}"
+    else:
+        text = f"{icon_result} {msg}"
+    
+    payload = {
+        "text": text
+    }
+
+    response = requests.post(slack_webhook_url, data=json.dumps(payload))
+    
+    if response.status_code != 200:
+        print("Slack 알림 전송 실패:", response.status_code, response.text)
+
+
+# 메세지 생성 및 호출
+def make_for_send_msg(dict_params):
+    # 슬랙 전송을 위한 인자의 구성
+    order_type = dict_params['order_type'] 
+    stock_code = dict_params['stock_code']
+    ord_qty = dict_params['ord_qty']
+    price = dict_params['price']
+    result = dict_params['result']
+    msg = dict_params['msg']
+    slack_webhook_url = dict_params['slack_webhook_url']
+
+    # 슬랙으로 메세지 전송
+    if dict_params['order_type'] == 'BUY':
+        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+    elif dict_params['order_type'] == 'SELL':
+        # 직전 매수 평균
+        if dict_params['buy_avg_price'] == 0:
+            deal_earn_rt = 0.0
+        else:
+            deal_earn_rt = round((dict_params['price'] - dict_params['buy_avg_price']) / dict_params['buy_avg_price'] * 100, 2)
+        # 결과 메세지 생성
+        if deal_earn_rt > 0.0:
+            result = 'UP'
+            msg = f'{deal_earn_rt}% 수익!! ^___^'
+        else:
+            result = 'DN'
+            msg = f'{deal_earn_rt}% 손실!! ㅠㅠ'
+
+        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+    else:
+        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+    # 기본 메세지 출력
+    print(f"{msg}")
+
+
+# 매도 수익률 계산
+def calc_deal_profit_rate(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN):
+    list_dict_result = TR.get_last_buy_trade(
+            owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN
+        )
+    
+    if list_dict_result is None:
+        return 0, 0, 0.0, 0, 0
+    
+    # 구분에 밎는 금액을 리스트로 저장후
+    list_sell_amt = []
+    list_buy_amt = []
+    for dict_data in list_dict_result:
+        if dict_data['DIV'] == '현금매도':
+            list_sell_amt.append(dict_data['TOT_AMT'])
+        elif dict_data['DIV'] == '현금매수':
+            list_buy_amt.append(dict_data['TOT_AMT'])
+    # 수익률 계산
+    sell_amt = sum(list_sell_amt)
+    buy_amt = sum(list_buy_amt)
+    
+    if buy_amt == 0:
+        return 0, 0, 0.0, 0, 0
+    
+    profit_rt = round((sell_amt - buy_amt) / buy_amt * 100, 2)
+    sell_avg = int(sell_amt / len(list_sell_amt))
+    buy_avg = int(buy_amt / len(list_buy_amt))
+
+    return sell_amt, buy_amt, profit_rt, sell_avg, buy_avg
+
+
+# 당일 거래 결과
+def today_deal_result(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN, slack_webhook_url):
+    time.sleep(1)
+    # 수익률 계산 및 최종 매도금액 저장
+    start_date = get_current_time().split(' ')[0]
+    end_date   = get_current_time().split(' ')[0]
+
+    try:
+        today_sell_amt, today_buy_amt, deal_earn_rt, today_sell_avg, today_buy_avg = calc_deal_profit_rate(
+                owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN
+            )
+        # 결과 출력
+        print('#' * 100)
+        print(f'# {owner} 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
+        print('#' * 100)
+        profit_amt = today_sell_amt - today_buy_amt
+        # 보유 자산에 대한 결과
+        dict_stock_info = TR.get_stock_info(
+                owner, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACCESS_TOKEN
+            )
+        amount_gap = int(dict_stock_info['total_eval_amt']) - int(dict_stock_info['bf_asset_eval_amt'])
+        if dict_stock_info['bf_asset_eval_amt'] == 0:
+            today_amt_rt = 0
+        else:
+            today_amt_rt = round((amount_gap / int(dict_stock_info['bf_asset_eval_amt'])) * 100, 5)
+        # 메세지 생성
+        slack_msg = f"전일 {int(dict_stock_info['bf_asset_eval_amt']):,}원에서 {int(dict_stock_info['total_eval_amt']):,}원으로 "
+        if amount_gap > 0:
+            slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 증가!! ^___^"
+            result = 'UP'
+        else:
+            slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 감소... ㅠㅠ"
+            result = 'DN'
+        # 결과 슬랙으로 전송
+        send_slack_alert('RESULT', '', 0, 0, result, slack_msg, slack_webhook_url)
+
+        if owner == "":
+            # 결과 데이터 저장
+            try:
+                df_deal = pl.read_csv(
+                    './data/deal_result.csv',
+                    schema_overrides={
+                        "DTM": pl.Utf8,
+                        "EARN_RT": pl.Float64,
+                        "ASSET_AMT": pl.Int64,
+                        "EVAL_AMT": pl.Int64,
+                        "DEAL_RT": pl.Float64,
+                        "BUY_AMT": pl.Int64,
+                        "BUY_AVG": pl.Int64,
+                        "SELL_AMT": pl.Int64,
+                        "SELL_AVG": pl.Int64,                    
+                    }
+                )
+            except FileNotFoundError:
+                df_deal = pl.DataFrame({
+                    "DTM": pl.Series([], pl.Utf8),
+                    "EARN_RT": pl.Series([], pl.Float64),
+                    "ASSET_AMT": pl.Series([], pl.Int64),
+                    "EVAL_AMT": pl.Series([], pl.Int64),
+                    "DEAL_RT": pl.Series([], pl.Float64),
+                    "BUY_AMT": pl.Series([], pl.Int64),
+                    "BUY_AVG": pl.Series([], pl.Int64),
+                    "SELL_AMT": pl.Series([], pl.Int64),
+                    "SELL_AVG": pl.Series([], pl.Int64),                
+                })
+            # 새 행 (모두 정수값)
+            new_row = pl.DataFrame({
+                "DTM": [str(get_current_time().split(' ')[0])],
+                "EARN_RT": [today_amt_rt],
+                "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
+                "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
+                "DEAL_RT": [deal_earn_rt],
+                "BUY_AMT": [today_buy_amt],
+                "BUY_AVG": [today_buy_avg],
+                "SELL_AMT": [today_sell_amt],
+                "SELL_AVG": [today_sell_avg],            
+            })
+            # 데이터 추가 및 저장
+            df_deal = df_deal.vstack(new_row)
+            df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
+        
+    except Exception as e:
+        print(e)
+
+
+# 현재 수익률
 def calc_earn_rt(now, base):
     if base == 0:
         rt = 0
@@ -71,127 +416,173 @@ def check_trend(lst, div='all'):
         else:
             return "PASS"
 
-####################################################################
-# 현재일시
-def get_current_time(full='N'):
-    if full == 'Y':
-        return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    else:
-        return datetime.now().strftime("%Y%m%d %H%M%S")
+
+# 상승장 매수 전략 확인
+def rise_buy_strategy(lst):
+    if len(lst) < 7: 
+        return False
+    if check_trend(lst[:5]) != 'INC':
+        return False
     
-####################################################################
-# 지정한 날짜 문자열과 날짜 수를 받아, 이전 날짜를 문자열로 반환하는 함수.
-def get_previous_date(date_str: str, days_before: int, date_format: str = "%Y-%m-%d") -> str:
-    base_date = datetime.strptime(date_str, date_format)
-    previous_date = base_date - timedelta(days=days_before)
-    return previous_date.strftime(date_format)
+    # 마지막 상승 이고 5연속 상승 후 하락 상승인 경우
+    if (lst[-1] > lst[-2]) and (lst[-2] < lst[-3]):
+        return True
+    
+    return False
 
-####################################################################
-# 네이버 증권에서 특정 종목의 어제 상승률을 가져오는 함수
-def get_naver_stock_yesterday_change(stock_code):
-    url = f"https://finance.naver.com/item/sise.naver?code={stock_code}"
 
-    # 웹 페이지 가져오기
-    response = requests.get(url, headers={"User-Agent": "Mozilla/5.0"})
-    if response.status_code != 200:
-        return f"Error: Unable to fetch data (Status Code {response.status_code})"
+# 하락장 매수 전략 확인
+def fall_buy_strategy(lst):
+    if len(lst) < 7: 
+        return False
+    if check_trend(lst[:5]) != 'DEC':
+        return False
+    
+    # 마지막 하락 이고 5연속 하락 후 상승 하락인 경우
+    if (lst[-1] < lst[-2]) and (lst[-2] > lst[-3]):
+        return True
+    
+    return False
 
-    # HTML 파싱
-    soup = BeautifulSoup(response.text, "html.parser")
 
+# 현재가의 저가, 고가에서의 위치
+def get_position_ratio(low, current, high):
+    if high == low:
+        return 0.0
+    else:
+        # 비율 계산: (현재가 - 저가) / (고가 - 저가)
+        return (current - low) / (high - low)
+    
+# 장초반 수량이 있으면 해당 수량으로 아니면 기준 수량으로
+def return_first_buy_qty(base, first):
+    if first == 0:
+        return base, first
+    else:
+        return first, 0
+
+# 리스트에서 요소 제거
+def remove_used_hour_min_element():
+    global LIST_DEC_HM
+    if LIST_DEC_HM:
+        LIST_DEC_HM.pop(0)  # 앞에서부터 하나 제거
+        print(f"현재 리스트 상태: {LIST_DEC_HM}")
+    else:
+        print("이미 리스트가 비어 있습니다.")
+    
+# 기준횟수 이상 연속으로 증가한 횟수
+def count_long_increasing_sequences(lst, min_length):
+    count = 0
+    n = len(lst)
+    i = 0  # 리스트 인덱스
+
+    while i < n - 1:
+        length = 1  # 현재 증가하는 구간의 길이
+        # 증가하는 구간의 길이 측정
+        while i < n - 1 and lst[i] < lst[i + 1]:
+            length += 1
+            i += 1
+        # 입력받은 최소 증가 횟수 이상이면 카운트
+        if length >= min_length:
+            count += 1
+        i += 1  # 다음 비교를 위해 인덱스 증가
+
+    return count
+
+
+# 기준횟수 이상 연속으로 감소한 횟수
+def count_long_decreasing_sequences(lst, min_length):
+    count = 0
+    n = len(lst)
+    i = 0  # 리스트 인덱스
+
+    while i < n - 1:
+        length = 1  # 현재 감소하는 구간의 길이
+        # 감소하는 구간의 길이 측정
+        while i < n - 1 and lst[i] > lst[i + 1]:
+            length += 1
+            i += 1
+        # 입력받은 최소 감소 횟수 이상이면 카운트
+        if length >= min_length:
+            count += 1
+        i += 1  # 다음 비교를 위해 인덱스 증가
+
+    return count
+
+
+# 기준횟수 이상으로 연속 상승, 하락한 횟수 추출
+def count_up_down_trends(prices, threshold=5):
+    increase_count = 0
+    decrease_count = 0
+
+    current_trend = None  # 'up' or 'down'
+    streak = 0
+
+    for i in range(1, len(prices)):
+        if prices[i] > prices[i - 1]:
+            if current_trend == 'up':
+                streak += 1
+            else:
+                if current_trend == 'down' and streak >= threshold:
+                    decrease_count += 1
+                current_trend = 'up'
+                streak = 1
+        elif prices[i] < prices[i - 1]:
+            if current_trend == 'down':
+                streak += 1
+            else:
+                if current_trend == 'up' and streak >= threshold:
+                    increase_count += 1
+                current_trend = 'down'
+                streak = 1
+        else:
+            # 변화 없음 -> 이전 트렌드 종료
+            if current_trend == 'up' and streak >= threshold:
+                increase_count += 1
+            elif current_trend == 'down' and streak >= threshold:
+                decrease_count += 1
+            current_trend = None
+            streak = 0
+
+    # 마지막 구간 체크
+    if current_trend == 'up' and streak >= threshold:
+        increase_count += 1
+    elif current_trend == 'down' and streak >= threshold:
+        decrease_count += 1
+
+    return increase_count, decrease_count
+
+
+# 매수 수량 계산
+def calc_order_qty(buy_cash, now_prc):
     try:
-        # 현재가 가져오기
-        price_now_element = soup.select_one("p.no_today span.blind")
-        if price_now_element:
-            price_now = float(price_now_element.text.strip().replace(',', ''))
-        else:
-            return "Error: Cannot find current price"
+        fee_rate = 0.3  # 0.3%
+        unit_price = now_prc * (1 + fee_rate)
+        return str(int(buy_cash // unit_price) - 1)
+    except:
+        return '0'
 
-        # 전일 종가 가져오기
-        price_prev_element = soup.select("table.no_info tr")[0].select("td")[0].select_one("span.blind")
-        if price_prev_element:
-            price_prev = float(price_prev_element.text.strip().replace(',', ''))
-        else:
-            return "Error: Cannot find previous close price"
+# 모두 감소여부 확인
+def is_strictly_decreasing(lst):
+    return all(lst[i] > lst[i+1] for i in range(len(lst) - 1))
 
-        # 상승률 직접 계산
-        change_rate = ((price_now - price_prev) / price_prev) * 100
+# 연속된 중복 요소를 제거
+def remove_duplicates_groupby(lst):
+    return [key for key, group in groupby(lst)]
 
-        dict_result = {
-            "현재가": price_now,
-            "전일 종가": price_prev,
-            "어제 상승률 (%)": round(change_rate, 2)
-        }
 
-        print(dict_result)
+# 현재 시세 조회
+def get_price(DELAY_SEC, BASE_URL, APP_KEY, APP_SECRET, ACCESS_TOKEN, STOCK_CODE):
+    time.sleep(DELAY_SEC)
+    data = TR.get_current_price(
+            ACCESS_TOKEN, STOCK_CODE, BASE_URL, APP_KEY, APP_SECRET
+        )
+    try:
+        sise_prc = int(data["output"]["stck_prpr"])  # 현재가
+    except:
+        sise_prc = -9999
+    return sise_prc
 
-        return dict_result['어제 상승률 (%)'], dict_result['전일 종가']
-    
-    except Exception as e:
-        return f"Error: {str(e)}"
 
-####################################################################
-# 전 거래일 추출 - 기본 삼성전자로 함
-def get_previous_trading_day(stock_code="005930"):
-    import datetime
-
-    url = f"https://finance.naver.com/item/sise_day.nhn?code={stock_code}"
-    headers = {'User-Agent': 'Mozilla/5.0'}
-
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, 'html.parser')
-
-    # 날짜 리스트 파싱
-    dates = []
-    for row in soup.select('table.type2 tr'):
-        cols = row.find_all('td')
-        if len(cols) >= 6:
-            date_text = cols[0].get_text(strip=True)
-            try:
-                date_obj = datetime.datetime.strptime(date_text, "%Y.%m.%d")
-                dates.append(date_obj.date())
-            except Exception as e:
-                print(e)
-                continue
-
-    # 최신 날짜 기준 정렬 후 두 번째 값이 전 거래일
-    dates = sorted(list(set(dates)), reverse=True)
-    if len(dates) >= 2:
-        return dates[1]  # 두 번째 날짜가 전 거래일
-    else:
-        return None
-    
-####################################################################
-# 슬랙으로 메세지 보내기
-def send_slack_alert(order_type, dict_account, qty, price, result, msg):
-    icon_ord = {
-        "BUY": "🟢",
-        "SELL": "🔴",
-    }.get(order_type, "🔔")
-
-    icon_result = {
-        "UP": "📈",
-        "DN": "📉"
-    }.get(result, "🔔")
-    
-    if order_type in ('BUY','SELL'):
-        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{dict_account['stock_name']}`\n수량: `{qty}`주\n가격: `{price:,}`원"
-        text = text + '\n\n' + f"{icon_result} {msg}"
-    else:
-        text = f"{icon_result} {msg}"
-
-    SLACK_WEBHOOK_URL = dict_account['slack_webhook_url']
-    
-    payload = {
-        "text": text
-    }
-    
-    response = requests.post(SLACK_WEBHOOK_URL, data=json.dumps(payload))
-    
-    if response.status_code != 200:
-        print("Slack 알림 전송 실패:", response.status_code, response.text)
-
-####################################################################
 def get_previous_trading_info(stock_code):
     url = f"https://finance.naver.com/item/sise_day.nhn?code={stock_code}"
     headers = {"User-Agent": "Mozilla/5.0"}
@@ -243,29 +634,6 @@ def get_previous_trading_info(stock_code):
         'change_percent': round(change_percent, 2)
     }
 
-####################################################################
-# 최고가 기준 이후 시세 데이터 추출
-def get_sise_list_by_high_price(df_sise):
-    # 최고가
-    high_prc = max(df_sise['PRC'])
-    df_filter = df_sise.filter(pl.col('PRC') == high_prc)
-    # 최고가 중 가장 오래된 금액
-    min_dtm = min(df_filter['DTM'])
-    # 이후 시세 데이터
-    df_sise = df_sise.filter(pl.col('DTM') >= min_dtm)
-    
-    return list(df_sise["PRC"])
-
-
-# 매수 수량 계산
-def calc_order_qty(deposit, now_prc):
-    try:
-        fee_rate = 0.3  # 0.3%
-        unit_price = now_prc * (1 + fee_rate)
-        return str(int(deposit // unit_price) - 1)
-    except:
-        return '0'
-    
 
 # 최고가 기준 이후 시세 데이터 추출
 def get_sise_list_by_high_price(df_sise):
@@ -278,206 +646,3 @@ def get_sise_list_by_high_price(df_sise):
     df_sise = df_sise.filter(pl.col('DTM') >= min_dtm)
     
     return list(df_sise["PRC"])
-
-# 기준횟수 이상으로 연속 상승, 하락한 횟수 추출
-def count_up_down_trends(prices, threshold=5):
-    increase_count = 0
-    decrease_count = 0
-
-    current_trend = None  # 'up' or 'down'
-    streak = 0
-
-    for i in range(1, len(prices)):
-        if prices[i] > prices[i - 1]:
-            if current_trend == 'up':
-                streak += 1
-            else:
-                if current_trend == 'down' and streak >= threshold:
-                    decrease_count += 1
-                current_trend = 'up'
-                streak = 1
-        elif prices[i] < prices[i - 1]:
-            if current_trend == 'down':
-                streak += 1
-            else:
-                if current_trend == 'up' and streak >= threshold:
-                    increase_count += 1
-                current_trend = 'down'
-                streak = 1
-        else:
-            # 변화 없음 -> 이전 트렌드 종료
-            if current_trend == 'up' and streak >= threshold:
-                increase_count += 1
-            elif current_trend == 'down' and streak >= threshold:
-                decrease_count += 1
-            current_trend = None
-            streak = 0
-
-    # 마지막 구간 체크
-    if current_trend == 'up' and streak >= threshold:
-        increase_count += 1
-    elif current_trend == 'down' and streak >= threshold:
-        decrease_count += 1
-
-    return increase_count, decrease_count
-
-# 메세지 생성 및 호출
-def make_for_send_msg(dict_account, dict_params):
-    # 슬랙으로 메세지 전송
-    if dict_params['order_type'] == 'BUY':
-        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], dict_params['msg'])
-    elif dict_params['order_type'] == 'SELL':
-        # 직전 매수 평균
-        if dict_params['buy_avg_price'] == 0:
-            deal_earn_rt = 0.0
-        else:
-            deal_earn_rt = round((dict_params['price'] - dict_params['buy_avg_price']) / dict_params['buy_avg_price'] * 100, 2)
-        # 결과 메세지 생성
-        if deal_earn_rt > 0.0:
-            result = 'UP'
-            msg = f'{deal_earn_rt}% 수익!! ^___^'
-        else:
-            result = 'DN'
-            msg = f'{deal_earn_rt}% 손실!! ㅠㅠ'
-
-        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], result, f"{dict_params['msg']} {msg}")
-    else:
-        send_slack_alert(dict_params['order_type'], dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']}")
-    # 기본 메세지 출력
-    print(f"{dict_params['msg']}")
-    
-# 매도를 위한 금액 조건 확인
-def check_sell(check_hm, avg_prc, now_prc, base_rt):
-    add_rt = 0.0
-    # 시간에 따른 수익률 절감을 위한 비교 시분 목록. 최대 0.3% 빠짐
-    if check_hm > '1330':
-        add_rt += 0.001
-    if check_hm > '1430':
-        add_rt += 0.001
-    if check_hm > '1500':
-        add_rt += 0.001
-    # 기본으로 설정
-    base_sell_price = int(round(avg_prc * (base_rt - add_rt), 2))
-    # 이상이면 매도 처리
-    if int(now_prc) >= base_sell_price:
-        return True, base_sell_price
-    else:
-        return False, base_sell_price
-    
-
-# 매도 수익률 계산
-def calc_deal_profit_rate(account_info, start_date, end_date):
-    dict_deal_div = {
-        '매도': '01',
-        '매수': '02',
-    }
-    list_dict_result = TR.get_last_buy_trade(account_info, start_date, end_date)
-    
-    # 구분에 밎는 금액을 리스트로 저장후
-    list_sell_amt = []
-    list_buy_amt = []
-    for dict_data in list_dict_result:
-        if dict_data['DIV'] == '현금매도':
-            list_sell_amt.append(dict_data['TOT_AMT'])
-        elif dict_data['DIV'] == '현금매수':
-            list_buy_amt.append(dict_data['TOT_AMT'])
-    # 수익률 계산
-    sell_amt = sum(list_sell_amt)
-    buy_amt = sum(list_buy_amt)
-    
-    if buy_amt == 0:
-        return 0, 0, 0.0, 0, 0
-    
-    profit_rt = round((sell_amt - buy_amt) / buy_amt * 100, 2)
-    sell_avg = int(sell_amt / len(list_sell_amt))
-    buy_avg = int(buy_amt / len(list_buy_amt))
-
-    return sell_amt, buy_amt, profit_rt, sell_avg, buy_avg
-
-
-# 당일 거래 결과
-def today_deal_result(dict_account, dict_params):
-    time.sleep(1)
-    # 수익률 계산 및 최종 매도금액 저장
-    today_sell_amt, today_buy_amt, deal_earn_rt, today_sell_avg, today_buy_avg = calc_deal_profit_rate(
-            dict_account, dict_params['start_date'], dict_params['end_date']
-        )
-    # 결과 출력
-    print('#' * 100)
-    print(f'# 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
-    print('#' * 100)
-    profit_amt = today_sell_amt - today_buy_amt
-    # 보유 자산에 대한 결과
-    dict_stock_info = TR.get_stock_info(dict_account)
-    amount_gap = int(dict_stock_info['total_eval_amt']) - int(dict_stock_info['bf_asset_eval_amt'])
-    try:
-        today_amt_rt = round((amount_gap / int(dict_stock_info['bf_asset_eval_amt'])) * 100, 5)
-    except:
-        today_amt_rt = 0.0
-    # 메세지 생성
-    slack_msg = f"전일 {int(dict_stock_info['bf_asset_eval_amt']):,}원에서 {int(dict_stock_info['total_eval_amt']):,}원으로 "
-    if amount_gap > 0:
-        slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 증가!! ^___^"
-        result = 'UP'
-    else:
-        slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 감소... ㅠㅠ"
-        result = 'DN'
-    # 결과 슬랙으로 전송
-    send_slack_alert('RESULT', dict_account, dict_params['qty'], dict_params['price'], dict_params['result'], f"{dict_params['msg']} {slack_msg}")
-    # 결과 데이터 저장
-    try:
-        df_deal = pl.read_csv(
-            './data/deal_result.csv',
-            schema_overrides={
-                "OWNER": pl.Utf8,
-                "DTM": pl.Utf8,
-                "EARN_RT": pl.Float64,
-                "ASSET_AMT": pl.Int64,
-                "EVAL_AMT": pl.Int64,
-                "DEAL_RT": pl.Float64,
-                "BUY_AMT": pl.Int64,
-                "BUY_AVG": pl.Int64,
-                "SELL_AMT": pl.Int64,
-                "SELL_AVG": pl.Int64,                    
-            }
-        )
-    except FileNotFoundError:
-        df_deal = pl.DataFrame({
-            "OWNER": [],
-            "DTM": [],
-            "EARN_RT": [],
-            "ASSET_AMT": [],
-            "EVAL_AMT": [],
-            "DEAL_RT": [],
-            "BUY_AMT": [],
-            "BUY_AVG": [],
-            "SELL_AMT": [],
-            "SELL_AVG": [],
-        }).with_columns([
-            pl.col("OWNER").cast(pl.Utf8),
-            pl.col("DTM").cast(pl.Utf8),
-            pl.col("EARN_RT").cast(pl.Float64),
-            pl.col("ASSET_AMT").cast(pl.Int64),
-            pl.col("EVAL_AMT").cast(pl.Int64),
-            pl.col("DEAL_RT").cast(pl.Float64),
-            pl.col("BUY_AMT").cast(pl.Int64),
-            pl.col("BUY_AVG").cast(pl.Int64),
-            pl.col("SELL_AMT").cast(pl.Int64),
-            pl.col("SELL_AVG").cast(pl.Int64),
-        ])
-    # 새 행 (모두 정수값)
-    new_row = pl.DataFrame({
-        "OWNER": [dict_account['owner']],
-        "DTM": [str(get_current_time().split(' ')[0])],
-        "EARN_RT": [today_amt_rt],
-        "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
-        "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
-        "DEAL_RT": [deal_earn_rt],
-        "BUY_AMT": [today_buy_amt],
-        "BUY_AVG": [today_buy_avg],
-        "SELL_AMT": [today_sell_amt],
-        "SELL_AVG": [today_sell_avg],            
-    })
-    # 데이터 추가 및 저장
-    df_deal = df_deal.vstack(new_row)
-    df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
