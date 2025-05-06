@@ -10,42 +10,58 @@ from bs4 import BeautifulSoup
 import trader as TR
 
 
-# 투자자 거래정보 
-def get_owner_config(owner="SOOJIN"):
-    # 거래에 관련한 모든 정보
+# 거래에 관련한 모든 정보
+def get_config_json(): 
     with open("../env/config.json", "r") as f:
-        config = json.load(f)
-    # 계정정보를 기본 이틀러스로 아니면 인자로 받은 계정으로 설정
+        return json.load(f)
+
+# 투자자 거래정보 
+def get_owner_config(owner):
+    config = get_config_json()
+    # 계정정보를 인자로 받은 계정으로 설정
     for dict_value in config["accounts"]:
         if dict_value['owner'] == owner:
             return dict_value
-
 
 # 운영, 모의에 맞는 TR_ID 생성
 def set_real_tr_id(tr_id):
     return 'V' + tr_id[1:]
 
+# 대기 메세지
+def wating_message(secs, msg):
+    icnt = secs
+    while icnt > 0:
+        print(f"{msg} {icnt}초")
+        icnt -= 1
+        time.sleep(1)
 
 # 토큰 발행
 def get_token(owner, base_url, app_key, app_secret):
     TOKEN_FILE = f"../env/token/token_cache_{owner}.json"
+
+    """ 존재하는 액세스 토큰 삭제 """
+    def delete_token():
+        if os.path.exists(TOKEN_FILE):
+            try:
+                os.remove(TOKEN_FILE)
+                print(f"토크파일 삭제 완료!!")
+            except Exception as e:
+                print(f"토큰파일 삭제 실패: {e}")
     
+    """ 액세스 토큰을 JSON 파일에 저장 """
     def save_token(token_data):
-        """ 액세스 토큰을 JSON 파일에 저장 """
         with open(TOKEN_FILE, "w") as f:
             json.dump(token_data, f)
 
-
+    """ JSON 파일에서 액세스 토큰을 불러옴 """
     def load_token():
-        """ JSON 파일에서 액세스 토큰을 불러옴 """
         if os.path.exists(TOKEN_FILE):
             with open(TOKEN_FILE, "r") as f:
                 return json.load(f)
         return None
 
-
+    """ 새로운 Access Token을 요청 """
     def request_new_token():
-        """ 새로운 Access Token을 요청 """
         url = f"{base_url}/oauth2/tokenP"
         print(url)
         payload = {
@@ -75,9 +91,8 @@ def get_token(owner, base_url, app_key, app_secret):
             print("❌ Access Token 발급 실패:", data)
             return None
         
-
+    """ Access Token을 불러오거나 만료되었으면 새로 발급 """
     def get_access_token():
-        """ Access Token을 불러오거나 만료되었으면 새로 발급 """
         token_data = load_token()
 
         if token_data:
@@ -92,7 +107,11 @@ def get_token(owner, base_url, app_key, app_secret):
         print("🔄 Access Token 새로 발급 중...")
         return request_new_token()
     
+    # 기존에 존재하는 토큰 삭제
+    delete_token()
+    # 토큰 발급
     token = get_access_token()
+    # 발급된 토큰 전달
     return token
 
     
@@ -287,7 +306,18 @@ def calc_deal_profit_rate(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SE
 
 
 # 당일 거래 결과
-def today_deal_result(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN, slack_webhook_url):
+def today_deal_result(dict_params):
+    start_date = dict_params['start_date']
+    end_date = dict_params['end_date']
+    OWNER = dict_params['OWNER']
+    BASE_URL = dict_params['BASE_URL']
+    APP_KEY = dict_params['APP_KEY']
+    APP_SECRET = dict_params['APP_SECRET']
+    ACC_NO = dict_params['ACC_NO']
+    ACNT_PRDT_CD = dict_params['ACNT_PRDT_CD']
+    TOKEN = dict_params['TOKEN']
+    SLACK_WEBHOOK_URL=dict_params['SLACK_WEBHOOK_URL']
+
     time.sleep(1)
     # 수익률 계산 및 최종 매도금액 저장
     start_date = get_current_time().split(' ')[0]
@@ -295,16 +325,16 @@ def today_deal_result(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET
 
     try:
         today_sell_amt, today_buy_amt, deal_earn_rt, today_sell_avg, today_buy_avg = calc_deal_profit_rate(
-                owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, ACCESS_TOKEN
+                OWNER, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACNT_PRDT_CD, TOKEN
             )
         # 결과 출력
         print('#' * 100)
-        print(f'# {owner} 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
+        print(f'# {OWNER} 오늘 거래결과: {deal_earn_rt}%  매수: {today_buy_amt:,}({today_buy_avg:,})  매도: {today_sell_amt:,}({today_sell_avg:,})')
         print('#' * 100)
         profit_amt = today_sell_amt - today_buy_amt
         # 보유 자산에 대한 결과
         dict_stock_info = TR.get_stock_info(
-                owner, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, ACCESS_TOKEN
+                OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, TOKEN
             )
         amount_gap = int(dict_stock_info['total_eval_amt']) - int(dict_stock_info['bf_asset_eval_amt'])
         if dict_stock_info['bf_asset_eval_amt'] == 0:
@@ -320,52 +350,51 @@ def today_deal_result(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRET
             slack_msg += f"{amount_gap:,}원 {today_amt_rt}% 감소... ㅠㅠ"
             result = 'DN'
         # 결과 슬랙으로 전송
-        send_slack_alert('RESULT', '', 0, 0, result, slack_msg, slack_webhook_url)
+        send_slack_alert('RESULT', '', 0, 0, result, slack_msg, SLACK_WEBHOOK_URL)
 
-        if owner == "":
-            # 결과 데이터 저장
-            try:
-                df_deal = pl.read_csv(
-                    './data/deal_result.csv',
-                    schema_overrides={
-                        "DTM": pl.Utf8,
-                        "EARN_RT": pl.Float64,
-                        "ASSET_AMT": pl.Int64,
-                        "EVAL_AMT": pl.Int64,
-                        "DEAL_RT": pl.Float64,
-                        "BUY_AMT": pl.Int64,
-                        "BUY_AVG": pl.Int64,
-                        "SELL_AMT": pl.Int64,
-                        "SELL_AVG": pl.Int64,                    
-                    }
-                )
-            except FileNotFoundError:
-                df_deal = pl.DataFrame({
-                    "DTM": pl.Series([], pl.Utf8),
-                    "EARN_RT": pl.Series([], pl.Float64),
-                    "ASSET_AMT": pl.Series([], pl.Int64),
-                    "EVAL_AMT": pl.Series([], pl.Int64),
-                    "DEAL_RT": pl.Series([], pl.Float64),
-                    "BUY_AMT": pl.Series([], pl.Int64),
-                    "BUY_AVG": pl.Series([], pl.Int64),
-                    "SELL_AMT": pl.Series([], pl.Int64),
-                    "SELL_AVG": pl.Series([], pl.Int64),                
-                })
-            # 새 행 (모두 정수값)
-            new_row = pl.DataFrame({
-                "DTM": [str(get_current_time().split(' ')[0])],
-                "EARN_RT": [today_amt_rt],
-                "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
-                "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
-                "DEAL_RT": [deal_earn_rt],
-                "BUY_AMT": [today_buy_amt],
-                "BUY_AVG": [today_buy_avg],
-                "SELL_AMT": [today_sell_amt],
-                "SELL_AVG": [today_sell_avg],            
+        # 결과 데이터 저장
+        try:
+            df_deal = pl.read_csv(
+                './data/deal_result.csv',
+                schema_overrides={
+                    "DTM": pl.Utf8,
+                    "EARN_RT": pl.Float64,
+                    "ASSET_AMT": pl.Int64,
+                    "EVAL_AMT": pl.Int64,
+                    "DEAL_RT": pl.Float64,
+                    "BUY_AMT": pl.Int64,
+                    "BUY_AVG": pl.Int64,
+                    "SELL_AMT": pl.Int64,
+                    "SELL_AVG": pl.Int64,                    
+                }
+            )
+        except FileNotFoundError:
+            df_deal = pl.DataFrame({
+                "DTM": pl.Series([], pl.Utf8),
+                "EARN_RT": pl.Series([], pl.Float64),
+                "ASSET_AMT": pl.Series([], pl.Int64),
+                "EVAL_AMT": pl.Series([], pl.Int64),
+                "DEAL_RT": pl.Series([], pl.Float64),
+                "BUY_AMT": pl.Series([], pl.Int64),
+                "BUY_AVG": pl.Series([], pl.Int64),
+                "SELL_AMT": pl.Series([], pl.Int64),
+                "SELL_AVG": pl.Series([], pl.Int64),                
             })
-            # 데이터 추가 및 저장
-            df_deal = df_deal.vstack(new_row)
-            df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
+        # 새 행 (모두 정수값)
+        new_row = pl.DataFrame({
+            "DTM": [str(get_current_time().split(' ')[0])],
+            "EARN_RT": [today_amt_rt],
+            "ASSET_AMT": [int(dict_stock_info['bf_asset_eval_amt'])],
+            "EVAL_AMT": [int(dict_stock_info['total_eval_amt'])],
+            "DEAL_RT": [deal_earn_rt],
+            "BUY_AMT": [today_buy_amt],
+            "BUY_AVG": [today_buy_avg],
+            "SELL_AMT": [today_sell_amt],
+            "SELL_AVG": [today_sell_avg],            
+        })
+        # 데이터 추가 및 저장
+        df_deal = df_deal.vstack(new_row)
+        df_deal.write_csv(f"./data/deal_result.csv", include_header=True)
         
     except Exception as e:
         print(e)
@@ -646,3 +675,158 @@ def get_sise_list_by_high_price(df_sise):
     df_sise = df_sise.filter(pl.col('DTM') >= min_dtm)
     
     return list(df_sise["PRC"])
+
+
+# 슬랙 메세지 기본. 호출 후 필요한 인자만 추가하여 사용
+def init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM):
+    dict_params = {
+        'start_date': start_date,
+        'end_date': end_date, 
+        'order_type': '', 
+        'ord_qty': 0, 
+        'price': 0, 
+        'buy_avg_price': 0,
+        'result':'',
+        'msg': '',
+        'slack_webhook_url': '',
+        'stock_code': STOCK_CD,
+        'stock_name': STOCK_NM,
+    }
+
+    return dict_params
+
+
+# 계정별 재고
+def save_account_data(div, dict_params):
+    start_date = dict_params['start_date']
+    end_date = dict_params['end_date']
+    OWNER = dict_params['OWNER']
+    BASE_URL = dict_params['BASE_URL']
+    APP_KEY = dict_params['APP_KEY']
+    APP_SECRET = dict_params['APP_SECRET']
+    ACC_NO = dict_params['ACC_NO']
+    TOKEN = dict_params['TOKEN']
+    STOCK_CD = dict_params['STOCK_CD']
+    ORDER_QTY = dict_params['ORDER_QTY']
+    preday_close_price  = dict_params['preday_close_price']
+
+    # 재고 현황
+    if div == 'STOCK':
+        dict_stock = TR.get_stock_info(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, TOKEN)
+        (stock_qty, stock_avg_prc) = (dict_stock['stock_qty'], dict_stock['stock_avg_prc'])
+        return stock_qty, stock_avg_prc
+    # 직전 매도, 매수 평균
+    elif div == 'AVG':
+        list_avg_prc = []
+        for div in ['매도','매수']:
+            dict_div_price = TR.last_deal_avg_price(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, TOKEN, start_date, end_date, div)
+            list_avg_prc.append(dict_div_price['last_deal_avg_prc'])
+        (sell_avg_prc, buy_avg_prc) = (list_avg_prc[0], list_avg_prc[1])
+        return sell_avg_prc, buy_avg_prc
+    # 주문 수량 및 금액
+    elif div == 'ORD':
+        deposit_amt = TR.get_deposit(
+                OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, TOKEN
+            )
+        # 지정한 수량이 있으면
+        if ORDER_QTY != '0':
+            # 지정한 수량
+            ord_abl_qty = ORDER_QTY
+        else:
+            # 상한가 적용된 주문가능수량
+            ord_abl_qty = calc_order_qty(deposit_amt, preday_close_price)
+  
+        return ord_abl_qty, deposit_amt
+    
+
+# 계정별 매수 주문
+def execute_buy(dict_params):
+    start_date = dict_params['start_date']
+    end_date = dict_params['end_date']
+    OWNER = dict_params['OWNER']
+    BASE_URL = dict_params['BASE_URL']
+    APP_KEY = dict_params['APP_KEY']
+    APP_SECRET = dict_params['APP_SECRET']
+    ACC_NO = dict_params['ACC_NO']
+    TOKEN = dict_params['TOKEN']
+    STOCK_CD = dict_params['STOCK_CD']
+    STOCK_NM = dict_params['STOCK_NM']
+    ORDER_QTY = dict_params['ORDER_QTY']
+    slack_msg  = dict_params['slack_msg']
+    SLACK_WEBHOOK_URL  = dict_params['SLACK_WEBHOOK_URL']
+
+    # 주문
+    if TR.buy_stock(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, ORDER_QTY, TOKEN):
+        # 매수 후 잠깐 대기. 데이터를 위해. 어짜피 바로 매도안됨.
+        wating_message(3, '매수 후 매수 평균 추출을 위한 대기...')
+        sell_avg_prc, buy_avg_prc = save_account_data('AVG', dict_params)
+        # 슬랙 메세지 전송
+        dict_params = init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM)
+        dict_params['order_type'] = 'BUY'
+        dict_params['ord_qty'] = ORDER_QTY
+        dict_params['price'] = buy_avg_prc
+        dict_params['buy_avg_price'] = buy_avg_prc
+        dict_params['msg'] = slack_msg
+        dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
+        make_for_send_msg(dict_params)
+        return True
+    else:
+        return False
+
+
+# 계정별 매도 주문
+def execute_sell(dict_params):
+    start_date = dict_params['start_date']
+    end_date = dict_params['end_date']
+    OWNER = dict_params['OWNER']
+    BASE_URL = dict_params['BASE_URL']
+    APP_KEY = dict_params['APP_KEY']
+    APP_SECRET = dict_params['APP_SECRET']
+    ACC_NO = dict_params['ACC_NO']
+    TOKEN = dict_params['TOKEN']
+    STOCK_CD = dict_params['STOCK_CD']
+    STOCK_NM = dict_params['STOCK_NM']
+    ORDER_QTY = dict_params['ORDER_QTY']
+    SLACK_WEBHOOK_URL  = dict_params['SLACK_WEBHOOK_URL']
+
+    # 주문
+    if TR.sell_stock(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, ORDER_QTY, TOKEN):
+        # 매수 후 잠깐 대기. 데이터를 위해. 어짜피 바로 매수안됨.
+        wating_message(3, '매도 후 매도 평균 추출을 위한 대기...')
+        sell_avg_prc, buy_avg_prc = save_account_data('AVG', dict_params)
+        # 슬랙 메세지 전송
+        dict_params = init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM)
+        dict_params['order_type'] = 'SELL'
+        dict_params['ord_qty'] = ORDER_QTY
+        dict_params['price'] = sell_avg_prc
+        dict_params['buy_avg_price'] = buy_avg_prc
+        sell_earn_rt = calc_earn_rt(sell_avg_prc, buy_avg_prc)
+        if sell_earn_rt > 0.0:
+            dict_params['result'] = 'UP'
+            dict_params['msg'] = f"매도 후 {sell_earn_rt}% 이익. ^___^"
+        else:
+            dict_params['result'] = 'DN'
+            dict_params['msg'] = f"매도 후 {sell_earn_rt}% 손실. ㅠㅠ"
+        dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
+        # 매도에 대한 결과 메세지 전송
+        make_for_send_msg(dict_params)
+        return True
+    else:
+        return False
+            
+
+# 매도를 위한 기준 금액 확인
+def check_for_sell(check_hm, avg_prc, now_prc, base_rt):
+    add_rt = 0.0
+    # 시간에 따른 수익률 절감을 위한 비교 시분 목록. 최대 0.2% 빠짐
+    if check_hm > '1430':
+        add_rt += 0.001
+    if check_hm > '1500':
+        add_rt += 0.001
+    # 기본으로 설정
+    base_sell_price = int(round(avg_prc * (base_rt - add_rt), 2))
+    # 이상이면 매도 처리
+    if now_prc >= base_sell_price:
+        return True, base_sell_price
+    else:
+        return False, base_sell_price

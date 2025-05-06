@@ -5,7 +5,7 @@ import requests
 
 import com_func as CF
 
-DELAY_SEC = 0.5  # 대기 시간 (초)
+DELAY_SEC = 0.25  # 대기 시간 (초)
 
 
 # 대표 계정으로 현재가 조회
