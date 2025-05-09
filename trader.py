@@ -27,7 +27,7 @@ def get_current_price(base_url, app_key, app_secret, token, stock_code):
     }
     response = requests.get(url, headers=headers, params=params)
     res = requests.get(url, headers=headers, params=params).json()
-    sise = res.get("output", {}).get("stck_prpr", "-9999")
+    sise = res.get("output", {}).get("stck_prpr", "0") 
     
     return int(sise)
 

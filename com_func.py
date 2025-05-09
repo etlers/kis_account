@@ -410,8 +410,6 @@ def calc_earn_rt(now, base):
 
 # 증가 감소에 대한 확인
 def check_trend(lst, div='all'):
-    if len(lst) < 5: 
-        return False, False
     increasing = all(lst[i] <= lst[i + 1] for i in range(len(lst)-1))  # 증가 여부 확인
     decreasing = all(lst[i] >= lst[i + 1] for i in range(len(lst)-1))  # 감소 여부 확인
 
@@ -696,8 +694,8 @@ def init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM):
     return dict_params
 
 
-# 계정별 재고
-def save_account_data(div, dict_params):
+# 계정별 잔고, 직전 매도/매수 평균, 주문 가능 수량 및 금액 조회
+def get_account_data(div, dict_params):
     start_date = dict_params['start_date']
     end_date = dict_params['end_date']
     OWNER = dict_params['OWNER']
@@ -710,7 +708,7 @@ def save_account_data(div, dict_params):
     ORDER_QTY = dict_params['ORDER_QTY']
     preday_close_price  = dict_params['preday_close_price']
 
-    # 재고 현황
+    # 잔고 현황
     if div == 'STOCK':
         dict_stock = TR.get_stock_info(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, TOKEN)
         (stock_qty, stock_avg_prc) = (dict_stock['stock_qty'], dict_stock['stock_avg_prc'])
@@ -725,6 +723,10 @@ def save_account_data(div, dict_params):
         return sell_avg_prc, buy_avg_prc
     # 주문 수량 및 금액
     elif div == 'ORD':
+        # 개발 계정은 지원 안함
+        if OWNER == 'DEV':
+            return 0, 0
+        # 계좌별 주문 가능 수량
         deposit_amt = TR.get_deposit(
                 OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, TOKEN
             )
@@ -759,7 +761,7 @@ def execute_buy(dict_params):
     if TR.buy_stock(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, ORDER_QTY, TOKEN):
         # 매수 후 잠깐 대기. 데이터를 위해. 어짜피 바로 매도안됨.
         wating_message(3, '매수 후 매수 평균 추출을 위한 대기...')
-        sell_avg_prc, buy_avg_prc = save_account_data('AVG', dict_params)
+        sell_avg_prc, buy_avg_prc = get_account_data('AVG', dict_params)
         # 슬랙 메세지 전송
         dict_params = init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM)
         dict_params['order_type'] = 'BUY'
@@ -793,7 +795,7 @@ def execute_sell(dict_params):
     if TR.sell_stock(OWNER, BASE_URL, APP_KEY, APP_SECRET, ACC_NO, STOCK_CD, ORDER_QTY, TOKEN):
         # 매수 후 잠깐 대기. 데이터를 위해. 어짜피 바로 매수안됨.
         wating_message(3, '매도 후 매도 평균 추출을 위한 대기...')
-        sell_avg_prc, buy_avg_prc = save_account_data('AVG', dict_params)
+        sell_avg_prc, buy_avg_prc = get_account_data('AVG', dict_params)
         # 슬랙 메세지 전송
         dict_params = init_slack_params(start_date, end_date, STOCK_CD, STOCK_NM)
         dict_params['order_type'] = 'SELL'
