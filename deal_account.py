@@ -39,10 +39,10 @@ APP_SECRET = dict_value['app_secret']
 ACC_NO = dict_value['account_number']
 ORDER_QTY = dict_value['order_qty']
 SLACK_WEBHOOK_URL = dict_value['slack_webhook_url']
-# 토큰은 시작에서 한번만. 있으면 삭제하고 다시 만듬
-TOKEN = CF.get_token(args.owner, PV.BASE_URL, APP_KEY, APP_SECRET)
 # 거래 URL
 BASE_URL = PV.BASE_URL_DEV if args.owner == 'DEV' else PV.BASE_URL_PROD
+# 토큰은 시작에서 한번만. 있으면 삭제하고 다시 만듬
+TOKEN = CF.get_token(args.owner, BASE_URL, APP_KEY, APP_SECRET)
 
 # 거래를 위한 인자 딕셔너리
 dict_param_deal = {
@@ -83,9 +83,6 @@ def send_account_status_msg(status_msg):
 def execute_deal():
     # 시세 데이터 저장을 위한 글로벌 변수 선언
     global df_sise, GATHERING_DATA_TF
-    # 계정이 없다면 종료
-    if run_break:
-        return None
     # 거래 구분
     POSITION = 'BUY'
     #------------------------------------------------------------------------
@@ -103,7 +100,7 @@ def execute_deal():
     open_msg = f"⏸ 장 시작!! \n  직전거래일({PV.dict_last_info['date'].replace('.','-')}) 마감: {PV.preday_close_price}. {PV.preday_updn_rt}% {preaday_status}"
     #------------------------------------------------------------------------
     # 잔고 수량 및 금액
-    ord_abl_qty, deposit_amt = CF.save_account_data('ORD', dict_param_deal)
+    ord_abl_qty, deposit_amt = CF.get_account_data('ORD', dict_param_deal)
     # 메세지 저장
     open_msg += '\n' + f'  주문가능금액: {deposit_amt:,}원, 상한가(30%) 적용 주문가능수량: {ord_abl_qty}주\n'
     #------------------------------------------------------------------------
@@ -114,11 +111,11 @@ def execute_deal():
     ####################################################################
     # 시작
     ####################################################################
-    # 시세 추출
+    # 최초 시세의 추출. 정상일 때까지 0.25 초마다 추출
     start_price = 0
-    while start_price < 1:
+    while start_price != 0:
         start_price = TR.get_current_price(
-                PV.BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
             )
     base_price = 0  # 거래 시작 금액으로 하락율 기준
     # 당일 저가 및 고가
@@ -154,7 +151,7 @@ def execute_deal():
     BASE_SELL_RT = 1.005  # 매도 수익률을 0.5% 기본으로 설정
     #--------------------------------------------------------
     # 장 시작 메세지 전송
-    sell_avg_prc, buy_avg_prc = CF.save_account_data('AVG', dict_param_deal)
+    sell_avg_prc, buy_avg_prc = CF.get_account_data('AVG', dict_param_deal)
     if buy_avg_prc > 0:
         print(f"# 📌 직전 매수: {buy_avg_prc:,}")
     if sell_avg_prc > 0.0:
@@ -200,7 +197,7 @@ def execute_deal():
             send_account_status_msg(status_msg)
         #------------------------------------------------------------------------
         # 잔고 수량 및 금액
-        stock_qty, stock_avg_prc = CF.save_account_data('STOCK', dict_param_deal)
+        stock_qty, stock_avg_prc = CF.get_account_data('STOCK', dict_param_deal)
         #------------------------------------------------------------------------
         # 15시 15분이 되면 종료
         if now_dtm > PV.END_DEAL_TM:
@@ -219,10 +216,10 @@ def execute_deal():
         #------------------------------------------------------------------------
         # 시세
         current_price = TR.get_current_price(
-                PV.BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
             )
         # 금액이 이상한 경우
-        if current_price == -9999:
+        if current_price == 0:
             continue
         #------------------------------------------------------------------------
         # 수동으로 매수를 한다. 특정 경로에 파일 존재
@@ -288,7 +285,7 @@ def execute_deal():
             seq_inc_cnt, seq_dec_cnt = CF.count_up_down_trends(list_sise_for_rebound, threshold)
         #------------------------------------------------------------------------
         # 매도, 매수 평균 금액 최신화
-        sell_avg_prc, buy_avg_prc = CF.save_account_data('AVG', dict_param_deal)
+        sell_avg_prc, buy_avg_prc = CF.get_account_data('AVG', dict_param_deal)
         #------------------------------------------------------------------------
         # 매수 후 매도를 위한 매수 금액에 대한 수익률 계산         
         if buy_avg_prc == 0:
@@ -334,8 +331,8 @@ def execute_deal():
             buy_msg = f"# {CF.get_current_time(full='Y').split(' ')[1]} [{PV.dict_deal_desc[POSITION]} {buy_cnt}회차] "
             #------------------------------------------------------------------------
             # 전일대비 극초반 급상승 중이면 바로 매수
-            if now_dtm < PV.RISE_EARLY_CHK_TM:
-                if preday_current_rt > 0.29 and preday_current_rt < 0.7:
+            if now_dtm > PV.RISE_EARLY_CHK_TM_START and now_dtm < PV.RISE_EARLY_CHK_TM_END:
+                if preday_current_rt > 0.29 and preday_current_rt < 0.51:
                     dict_param_deal['slack_msg'] = f'# 장초반 급상승({preday_current_rt}%) 매수'
                     CF.execute_buy(dict_param_deal)
                     buy_cnt += 1
@@ -352,7 +349,7 @@ def execute_deal():
                 print('#' + '-' * 119 )
                 continue
             #------------------------------------------------------------------------
-            # 극초반 아닌 장초반(09시 30분) 상승장의 경우는 매수를 지양한다.
+            # 극초반 아닌 장초반(09시 30분) 상승장(전일대비 시세들이 95% 이상 상승)의 경우는 매수를 보류한다.
             if now_dtm < PV.IN_START_BUY_TM and len(LIST_SISE_PRICE) > 50:
                 base_rt = 95.0
                 icnt = 0
@@ -407,7 +404,7 @@ def execute_deal():
             # 초반에 시작(직전)대비 기준이상 빠지고 연속 상승하면 매수한다.
             down_in_early_day_tf = False
             slack_msg_down_in_early_day = ''
-            if now_dtm < PV.DOWN_IN_EARLY_CHK_TM:
+            if now_dtm < PV.DOWN_IN_LOW_RATE_TM:
                 if base_current_rt < -1.51 or preday_current_rt < 2.01:
                     down_in_early_day_tf = True
                     slack_msg_down_in_early_day = f'시작대비 {base_current_rt}% 전일대비 {preday_current_rt}% 하락 후 {inc_dec_check_tick}연속 상승. 매수'
@@ -439,11 +436,11 @@ def execute_deal():
             #------------------------------------------------------------------------
             # 횡보장. 중간값을 기준으로 오르락 내리락 하다 마지막에 튀어오르면 매수하자
             sideways_tf = False
+            base_tick_sideway = 150
             slack_msg_sideways = ''
-            if len(LIST_SISE_PRICE) < 200:
+            if len(LIST_SISE_PRICE) < base_tick_sideway:
                 pass
             else:
-                base_tick_sideway = 150
                 # 최근 150틱을 기준으로
                 base_max_prc = max(LIST_SISE_PRICE[-base_tick_sideway:])
                 base_min_prc = min(LIST_SISE_PRICE[-base_tick_sideway:])
@@ -499,12 +496,14 @@ def execute_deal():
             # 디비에 매수 반영이 늦어지는 것을 대비하여 여러번 금액 추출
             no_buy_cnt = 0             
             while buy_avg_prc == 0:
+                time.sleep(1)
+                # 매수 평균 금액이 없으면 대기
                 no_buy_cnt += 1
                 print(f"### 최종 평균 매수 금액 없음!! 대기 후 재확인. {no_buy_cnt}회")
-                sell_avg_prc, buy_avg_prc = CF.save_account_data('AVG', dict_param_deal)
+                sell_avg_prc, buy_avg_prc = CF.get_account_data('AVG', dict_param_deal)
                 # 마지막 매수 평균금액이 있어야 함
                 if no_buy_cnt > 10:
-                    stock_qty, stock_avg_prc = CF.save_account_data('STOCK', dict_param_deal)
+                    stock_qty, stock_avg_prc = CF.get_account_data('STOCK', dict_param_deal)
                     if stock_qty == 0:
                         print("### 최종 매수금액 확인 불가!!! 매수로 전환.")
                         POSITION = 'BUY'
@@ -562,25 +561,28 @@ def execute_deal():
                     # 매도 후 기본 조정으로 설정
                     force_rate_tf = False
                 else:
-                    stock_qty, stock_avg_prc = CF.save_account_data('STOCK', dict_param_deal)
+                    stock_qty, stock_avg_prc = CF.get_account_data('STOCK', dict_param_deal)
                     print(f"### 매도 실패!!! 현재 잔고 수량 {stock_qty}주.")
                     
 
 if __name__ == "__main__":
-    # 거래 시작
-    execute_deal()
     # 오너가 없어 종료된 것이 아니면
     if run_break == False:
+        # 거래 시작
+        execute_deal()
         # 거래 종료에 따른 결과. 당일 수익률 확인
         CF.today_deal_result(dict_param_deal)
         print('# 남은시간 시세 데이터 저장 시작.')
+        pre_price = 0
         while CF.get_current_time().split(' ')[1] < '152500':
             current_price = TR.get_current_price(
-                    PV.BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                    BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
                 )
-            # 금액이 이상한 경우
-            if current_price != -9999:
-                LIST_SISE_PRICE.append(current_price)
+            if pre_price == current_price or current_price == 0:
+                continue
+            # 금액이 정상인 경우
+            LIST_SISE_PRICE.append(current_price)
+            pre_price = current_price
         # 시세 데이터 저장
         print(df_sise.shape)
         df_sise.write_csv(f"./data/sise_data_{CF.get_current_time().split(' ')[0]}.csv", include_header=True)
