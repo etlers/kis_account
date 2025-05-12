@@ -168,7 +168,7 @@ def get_last_buy_trade(owner, start_date, end_date, BASE_URL, APP_KEY, APP_SECRE
 
     response = requests.get(url, headers=headers, params=params)
     data = response.json()
-    print(data)
+    
     i = 0
     list_dict_sell = []
     for dict_data in data['output1']:
@@ -210,7 +210,7 @@ def last_deal_avg_price(owner, base_url, app_key, app_secret, acc_no, token, sta
     
     try:
         list_dict_result = get_last_buy_trade(
-                owner, base_url, app_key, app_secret, acc_no, token, start_date, end_date, dict_deal_div[div]
+                owner, start_date, end_date, base_url, app_key, app_secret, acc_no, '01', token, dict_deal_div[div]
             )
         
         # 마지막부터 읽고자 역으로 재생성
@@ -218,7 +218,8 @@ def last_deal_avg_price(owner, base_url, app_key, app_secret, acc_no, token, sta
         avg_prc = int(list_dict_result[0]['AVG_PRC']) if len(list_dict_result) > 0 else 0
 
         dict_result["last_deal_avg_prc"] = avg_prc
-    except:
+    except Exception as e:
+        # print(e)
         pass
         
     return dict_result

@@ -66,7 +66,6 @@ dict_param_deal = {
 
 # 상태 메세지 전송
 def send_account_status_msg(status_msg):
-    status_msg = f""
     # 슬랙 파라미터 생성
     dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
     dict_params['order_type'] = 'STATUS'
@@ -113,7 +112,7 @@ def execute_deal():
     ####################################################################
     # 최초 시세의 추출. 정상일 때까지 0.25 초마다 추출
     start_price = 0
-    while start_price != 0:
+    while start_price == 0:
         start_price = TR.get_current_price(
                 BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
             )
@@ -154,6 +153,7 @@ def execute_deal():
     sell_avg_prc, buy_avg_prc = CF.get_account_data('AVG', dict_param_deal)
     if buy_avg_prc > 0:
         print(f"# 📌 직전 매수: {buy_avg_prc:,}")
+        POSITION = "SELL"
     if sell_avg_prc > 0.0:
         print(f"# 📌 직전 매도: {sell_avg_prc:,}")
     print(f"# 📌 시작 금액: {start_price:,}")
@@ -405,9 +405,9 @@ def execute_deal():
             down_in_early_day_tf = False
             slack_msg_down_in_early_day = ''
             if now_dtm < PV.DOWN_IN_LOW_RATE_TM:
-                if base_current_rt < -1.51 or preday_current_rt < 2.01:
+                if base_current_rt < -1.51 or preday_current_rt < -2.01:
                     down_in_early_day_tf = True
-                    slack_msg_down_in_early_day = f'시작대비 {base_current_rt}% 전일대비 {preday_current_rt}% 하락 후 {inc_dec_check_tick}연속 상승. 매수'
+                    slack_msg_down_in_early_day = f'시작 및 전일대비 하락 매수. 시작대비 {base_current_rt}% 전일대비 {preday_current_rt}% 하락 후 {inc_dec_check_tick}연속 상승. 매수'
                     BASE_SELL_RT = 1.0055
                     # 강제 조정 확인
                     force_rate_tf = True

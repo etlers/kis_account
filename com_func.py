@@ -108,7 +108,7 @@ def get_token(owner, base_url, app_key, app_secret):
         return request_new_token()
     
     # 기존에 존재하는 토큰 삭제
-    delete_token()
+    # delete_token()
     # 토큰 발급
     token = get_access_token()
     # 발급된 토큰 전달
