@@ -167,6 +167,13 @@ def execute_deal():
     # 금액 변수
     sell_avg_prc = 0  # 직전 매도 평균
     buy_avg_prc = 0  # 직전 매수 평균
+    # 스케쥴로 거래 시작을 알림
+    dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+    dict_params['order_type'] = 'STATUS'
+    dict_params['result'] = '상태 알림'
+    dict_params['msg'] = '스케쥴 거래 시작!!!'
+    dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
+    CF.make_for_send_msg(dict_params)
     
     ####################################################################
     # 시세를 받아오면서 거래 시작
