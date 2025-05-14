@@ -346,7 +346,7 @@ def execute_deal():
                 # 극초반 매수 조건을 만족하지 않으면 데이터 쌓기만 함
                 buy_msg += f"# 매수대기 {CF.get_current_time(full='Y').split(' ')[1]}] 저가: {today_low_price}, 현재: {current_price}({preday_current_rt}%), 고가: {today_high_price}"
                 print(buy_msg)
-                print('#' + '-' * 119 )
+                print('#' + '-' * 109 )
                 continue
             #------------------------------------------------------------------------
             # 극초반 아닌 장초반(09시 30분) 상승장(전일대비 시세들이 95% 이상 상승)의 경우는 매수를 보류한다.
@@ -360,14 +360,14 @@ def execute_deal():
                 if sise_up_rt > base_rt:
                     buy_msg += f'# 장초반 전일대비 {base_rt}% 이하 상승 조건 {sise_up_rt}%로 불만족. 이후 급락 위험. 매수 대기'
                     print(buy_msg)
-                    print('#' + '-' * 119 )
+                    print('#' + '-' * 109 )
                     continue
             #------------------------------------------------------------------------
             # 전일대비 고가라 매수 이후 매도가 쉽지 않을 듯
             if preday_current_rt > 1.0:
                 buy_msg += f"# 전일대비 고가로 매수 대기. 전일대비 {preday_current_rt}% 상승중. 현재 {current_price}  고가 {today_high_price:,}"
                 print(buy_msg)
-                print('#' + '-' * 119 )
+                print('#' + '-' * 109 )
                 continue
             #------------------------------------------------------------------------
             # 이전 매도보다 -0.3% 아래로 내려갔을 경우 즉, 99.7% 가격 이하에서만 매수를 한다.
@@ -376,21 +376,21 @@ def execute_deal():
                 if pre_sell_current_rt > -0.3:
                     buy_msg += f'# 이전 매도대비 -0.3% 이하 조건 불만족. 현재 {pre_sell_current_rt}% 상승. 매수 대기'
                     print(buy_msg)
-                    print('#' + '-' * 119 )
+                    print('#' + '-' * 109 )
                     continue
             #------------------------------------------------------------------------
             # 이하 매수는 상승 흐름에서만 즉, 4틱 연속으로 상승한 이후만 적용
             if inc_tf == False:
                 buy_msg += f'# 아직 상승 흐름으로 진입 못함. {LIST_SISE_PRICE[-inc_dec_check_tick:]}'
                 print(buy_msg)
-                print('#' + '-' * 119 )
+                print('#' + '-' * 109 )
                 continue
             #------------------------------------------------------------------------
             # 매수대기 메세지
             buy_msg += f"시작대비 {base_current_rt}%  전일대비 {preday_current_rt}%  "
             buy_msg += f"{threshold}연속상승 {seq_inc_cnt}회  {threshold}연속하락 {seq_dec_cnt}회  "
             buy_msg += f"저가갱신 {low_price_change_cnt}회  고가갱신 {high_price_change_cnt}회\n"
-            print('#' + '-' * 119 )
+            print('#' + '-' * 109 )
             #------------------------------------------------------------------------
             # 직전 매도가 있었다면 매수 기준이 되는 직전 매도금액 표시
             if sell_cnt > 1:
@@ -432,7 +432,7 @@ def execute_deal():
                 # 75% 이상 빠졌다면
                 if front_rear_rt < -0.75:
                     step_down_up_tf = True
-                    slack_msg_step_down_up = f'급락({front_rear_rt}%) 후 {inc_dec_check_tick}연속 상승. 매수'
+                    slack_msg_step_down_up = f'최근 30분(150개 시세) 급락({front_rear_rt}%) 후 {inc_dec_check_tick}연속 상승. 매수'
             #------------------------------------------------------------------------
             # 횡보장. 중간값을 기준으로 오르락 내리락 하다 마지막에 튀어오르면 매수하자
             sideways_tf = False
@@ -462,13 +462,13 @@ def execute_deal():
                         sideways_tf = False
                         buy_msg += f'# 횡보장 최근 30분 전일대비 최저가 0.5% 이하 상승 조건 {min_preday_rt}%로 불만족. 최저가 {base_min_prc:,}({PV.preday_close_price:,}). 매수 대기'
                         print(buy_msg)
-                        print('#' + '-' * 119 )
+                        print('#' + '-' * 109 )
                     # 최근 30분(150개)의 최고값이 전일보다 0.9% 이상이면 대기하자
                     if max_preday_rt > 0.9:
                         sideways_tf = False
                         buy_msg += f'# 횡보장 최근 30분 전일대비 최고가 0.9% 이하 상승 조건 {max_preday_rt}%로 불만족. 최저가 {base_max_prc:,}({PV.preday_close_price:,}). 매수 대기'
                         print(buy_msg)
-                        print('#' + '-' * 119 )
+                        print('#' + '-' * 109 )
             #------------------------------------------------------------------------                
             # 매수조건 확인 후 매수
             # 기울기 급하락, 상승장, 횡보장, 최근 모두 하락 중 하나라도 만족
