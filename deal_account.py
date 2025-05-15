@@ -102,6 +102,8 @@ def execute_deal():
     ord_abl_qty, deposit_amt = CF.get_account_data('ORD', dict_param_deal)
     # 메세지 저장
     open_msg += '\n' + f'  주문가능금액: {deposit_amt:,}원, 상한가(30%) 적용 주문가능수량: {ord_abl_qty}주\n'
+    # 오더 수량의 재정의
+    dict_param_deal['ORDER_QTY'] = ord_abl_qty if ORDER_QTY == "0" else ORDER_QTY
     #------------------------------------------------------------------------
     buy_cnt = 1  # 매수 회차
     sell_cnt = 1  # 매도 회차
@@ -168,10 +170,12 @@ def execute_deal():
     sell_avg_prc = 0  # 직전 매도 평균
     buy_avg_prc = 0  # 직전 매수 평균
     # 스케쥴로 거래 시작을 알림
+    msg = '✅ 스케쥴 거래 시작!!! '
+    msg += ORDER_QTY + "주" if ORDER_QTY != "0" else "최대"
     dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
     dict_params['order_type'] = 'STATUS'
     dict_params['result'] = '상태 알림'
-    dict_params['msg'] = '스케쥴 거래 시작!!!'
+    dict_params['msg'] = msg
     dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
     CF.make_for_send_msg(dict_params)
     

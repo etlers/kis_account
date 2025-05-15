@@ -17,7 +17,12 @@ log_file = os.path.join(log_dir, f"cron_{today.strftime('%Y%m%d')}.log")
 if today not in kr_holidays:
     with open(log_file, "a") as f:
         subprocess.run(
-            ["/Library/Frameworks/Python.framework/Versions/3.12/bin/python3", "/Users/etlers/Documents/kis_account/deal_account.py --owner SOOJIN"],
+            [
+                "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3", 
+                "/Users/etlers/Documents/kis_account/deal_account.py",
+                " --owner",
+                "SOOJIN"
+            ],
             stdout=f,
             stderr=subprocess.STDOUT
         )

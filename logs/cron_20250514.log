@@ -1,1 +1,3 @@
 /Library/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python: can't open file '/Users/etlers/Documents/kis_account/deal_account.py --owner SOOJIN': [Errno 2] No such file or directory
+ 
+ FileNotFoundError: [Errno 2] No such file or directory: '../env/config.json'
