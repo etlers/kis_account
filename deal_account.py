@@ -202,11 +202,6 @@ def execute_deal():
             CF.make_for_send_msg(dict_params)
             send_start_msg_tf = True
         #------------------------------------------------------------------------
-        # 10시부터 매 시간마다 상태를 슬랙으로 전송
-        if now_dtm in PV.list_status_tm:
-            status_msg = buy_msg if POSITION == 'BUY' else sell_msg
-            send_account_status_msg(status_msg)
-        #------------------------------------------------------------------------
         # 잔고 수량 및 금액
         stock_qty, stock_avg_prc = CF.get_account_data('STOCK', dict_param_deal)
         #------------------------------------------------------------------------
@@ -324,6 +319,10 @@ def execute_deal():
         # 매수인 경우만
         #------------------------------------------------------------------------
         if POSITION == 'BUY':
+            #------------------------------------------------------------------------
+            # 10시부터 매 시간마다 상태를 슬랙으로 전송
+            if now_dtm in PV.list_buy_status_tm:
+                send_account_status_msg(buy_msg)
             #------------------------------------------------------------------------
             # 13시 30분 이후는 매수하지 않는다. 매도만 한다.
             if now_dtm > PV.NO_MORE_BUY_CHK_TM:
@@ -504,6 +503,10 @@ def execute_deal():
         # 매도를 위한 모니터링
         #------------------------------------------------------------------------
         else:
+            #------------------------------------------------------------------------
+            # 10시부터 매 시간마다 상태를 슬랙으로 전송
+            if now_dtm in PV.list_sell_status_tm:
+                send_account_status_msg(sell_msg)
             # 디비에 매수 반영이 늦어지는 것을 대비하여 여러번 금액 추출
             no_buy_cnt = 0             
             while buy_avg_prc == 0:
