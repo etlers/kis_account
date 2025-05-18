@@ -21,16 +21,6 @@ if args.owner is None:
     print("계정을 입력 해야함!!!")
     run_break = True
 
-# 시세 데이터의 저장
-LIST_SISE_PRICE = []
-df_sise = pl.DataFrame([])
-
-# 직전 거래일 정보 확인
-preday_result_msg = f"# 전일 종가: {PV.preday_close_price:,}원, 전일대비 상승률: {PV.preday_updn_rt}%"
-print('#' * 120)
-print(preday_result_msg)
-print('#' * 120)
-
 # 투자자 거래정보
 dict_value = CF.get_owner_config(args.owner)
 # 인자로 받은 계정으로 설정
@@ -38,11 +28,26 @@ APP_KEY = dict_value['app_key']
 APP_SECRET = dict_value['app_secret']
 ACC_NO = dict_value['account_number']
 ORDER_QTY = dict_value['order_qty']
+STOCK_CD = dict_value['stock_code']
+STOCK_NM = dict_value['stock_name']
 SLACK_WEBHOOK_URL = dict_value['slack_webhook_url']
+# 직전 거래일 정보 확인
+dict_last_info = CF.get_previous_trading_info(STOCK_CD)
+preday_updn_rt = dict_last_info['change_percent']  # 전일대비 상승하락 비율
+preday_close_price = int(dict_last_info['close_price'])  # 전일 종가
 # 거래 URL
 BASE_URL = PV.BASE_URL_DEV if args.owner == 'DEV' else PV.BASE_URL_PROD
-# 토큰은 시작에서 한번만. 있으면 삭제하고 다시 만듬
+# 토큰은 시작에서 한번만.
 TOKEN = CF.get_token(args.owner, BASE_URL, APP_KEY, APP_SECRET)
+
+# 시세 데이터의 저장
+LIST_SISE_PRICE = []
+df_sise = pl.DataFrame([])
+# 직전 거래일 정보 확인
+preday_result_msg = f"# 전일 종가: {preday_close_price:,}원, 전일대비 상승률: {preday_updn_rt}%"
+print('#' * 120)
+print(preday_result_msg)
+print('#' * 120)
 
 # 거래를 위한 인자 딕셔너리
 dict_param_deal = {
@@ -55,19 +60,19 @@ dict_param_deal = {
     'ACC_NO':ACC_NO,
     'ACNT_PRDT_CD':'01',
     'TOKEN':TOKEN,
-    'STOCK_CD':PV.STOCK_CD,
-    'STOCK_NM':PV.STOCK_NM,
+    'STOCK_CD':STOCK_CD,
+    'STOCK_NM':STOCK_NM,
     'ORDER_QTY':ORDER_QTY,
     'slack_msg':'',
     'SLACK_WEBHOOK_URL':SLACK_WEBHOOK_URL,
-    'preday_close_price':PV.preday_close_price,
+    'preday_close_price':preday_close_price,
 }
 
 
 # 상태 메세지 전송
 def send_account_status_msg(status_msg):
     # 슬랙 파라미터 생성
-    dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+    dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
     dict_params['order_type'] = 'STATUS'
     dict_params['result'] = '상태 알림'
     dict_params['msg'] = status_msg
@@ -86,22 +91,22 @@ def execute_deal():
     POSITION = 'BUY'
     #------------------------------------------------------------------------
     # 어제 많이 상승 했다면 신중하게 매수
-    if PV.preday_updn_rt > 1.5:
+    if preday_updn_rt > 1.5:
         preaday_status = '상승. 신중하게 매수'
     # 어제 많이 하락 했다면 과감하게 매수
-    elif PV.preday_updn_rt < -1.5:
+    elif preday_updn_rt < -1.5:
         preaday_status = '하락. 과감하게 매수'
     # 일상적인 경우
     else:
         preaday_status = '일반적인 진행'
     #------------------------------------------------------------------------
     # 시작 전 알림 메세지
-    open_msg = f"⏸ 장 시작!! \n  직전거래일({PV.dict_last_info['date'].replace('.','-')}) 마감: {PV.preday_close_price}. {PV.preday_updn_rt}% {preaday_status}"
+    open_msg = f"⏸ 장 시작!! \n  직전거래일({dict_last_info['date'].replace('.','-')}) 마감: {preday_close_price}. {preday_updn_rt}% {preaday_status}"
     #------------------------------------------------------------------------
     # 잔고 수량 및 금액
     ord_abl_qty, deposit_amt = CF.get_account_data('ORD', dict_param_deal)
     # 메세지 저장
-    open_msg += '\n' + f'  주문가능금액: {deposit_amt:,}원, 상한가(30%) 적용 주문가능수량: {ord_abl_qty}주\n'
+    open_msg += '\n' + f' {STOCK_NM}] 주문가능금액: {deposit_amt:,}원, 상한가(30%) 적용 주문가능수량: {ord_abl_qty}주\n'
     # 오더 수량의 재정의
     dict_param_deal['ORDER_QTY'] = ord_abl_qty if ORDER_QTY == "0" else ORDER_QTY
     #------------------------------------------------------------------------
@@ -116,7 +121,7 @@ def execute_deal():
     start_price = 0
     while start_price == 0:
         start_price = TR.get_current_price(
-                BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                BASE_URL, APP_KEY, APP_SECRET, TOKEN, STOCK_CD
             )
     base_price = 0  # 거래 시작 금액으로 하락율 기준
     # 당일 저가 및 고가
@@ -124,7 +129,7 @@ def execute_deal():
     today_high_price = start_price
     low_price_change_cnt = 0  # 저가 갱신 횟수
     high_price_change_cnt = 0  # 고가 갱신 횟수
-    pre_price = PV.preday_close_price  # 전일 종가로 설정
+    pre_price = preday_close_price  # 전일 종가로 설정
     # 매도 기준 수익률 변경을 위한 파일
     file_nm_sell_rt = 'sell_rt.txt'
     full_path_sell_rt = f'./{file_nm_sell_rt}'
@@ -172,7 +177,7 @@ def execute_deal():
     # 스케쥴로 거래 시작을 알림
     msg = '✅ 스케쥴 거래 시작!!! '
     msg += ORDER_QTY + "주" if ORDER_QTY != "0" else "최대"
-    dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+    dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
     dict_params['order_type'] = 'STATUS'
     dict_params['result'] = '상태 알림'
     dict_params['msg'] = msg
@@ -195,7 +200,7 @@ def execute_deal():
         # 재시작이 아닌 경우만 장 시작 메세지 전송
         if now_dtm < '090300' and send_start_msg_tf == False:
             # 계정별로 전송
-            dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+            dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
             dict_params['order_type'] = 'Start!!'
             dict_params['msg'] = '오픈 알림. ' + open_msg
             dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
@@ -212,7 +217,7 @@ def execute_deal():
                 dict_param_deal['slack_msg'] = "⏳ 장 마감 시간 도래, 매도 후 프로그램 종료"
                 CF.execute_sell(dict_param_deal)
             else:
-                dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+                dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
                 dict_params['order_type'] = 'INFO'
                 dict_params['msg'] = "⏳ 장 마감 시간 도래, 매도할 수량 없음. 프로그램 종료"
                 dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
@@ -222,7 +227,7 @@ def execute_deal():
         #------------------------------------------------------------------------
         # 시세
         current_price = TR.get_current_price(
-                BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                BASE_URL, APP_KEY, APP_SECRET, TOKEN, STOCK_CD
             )
         # 금액이 이상한 경우
         if current_price == 0:
@@ -238,7 +243,7 @@ def execute_deal():
             os.rename(full_path_buy, f'./file/{file_nm_buy}')
         #------------------------------------------------------------------------
         # 전일 대비 상승하락 비율
-        preday_current_rt = CF.calc_earn_rt(current_price, PV.preday_close_price)
+        preday_current_rt = CF.calc_earn_rt(current_price, preday_close_price)
         #------------------------------------------------------------------------
         # 이전과 동일하면 다음 데이터 처리
         if current_price == pre_price:
@@ -302,7 +307,7 @@ def execute_deal():
         # 강제 매도. 특정 경로에 파일이 있으면 매도 처리.
         # 목표 수익률은 가지 못할거 같은데 또 하락할거 같은 느낌이 드는 경우 익절을 위함
         if os.path.isfile(full_path_sell):
-            dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+            dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
             if stock_qty == 0:
                 dict_params['order_type'] = 'CLOSE'
                 dict_params['msg'] = f"✅ 강제 매도. 잔고 없음. 거래 종료"
@@ -327,7 +332,7 @@ def execute_deal():
             # 13시 30분 이후는 매수하지 않는다. 매도만 한다.
             if now_dtm > PV.NO_MORE_BUY_CHK_TM:
                 slack_msg = f"# 13시 30분 이후 잔고 없음. 더이상 매수하지 않음. 거래 종료"
-                dict_params = CF.init_slack_params(PV.start_date, PV.end_date, PV.STOCK_CD, PV.STOCK_NM)
+                dict_params = CF.init_slack_params(PV.start_date, PV.end_date, STOCK_CD, STOCK_NM)
                 dict_params['order_type'] = 'CLOSE'
                 dict_params['msg'] = slack_msg
                 dict_params['slack_webhook_url'] = SLACK_WEBHOOK_URL
@@ -364,7 +369,7 @@ def execute_deal():
                 base_rt = 95.0
                 icnt = 0
                 for prc in LIST_SISE_PRICE:
-                    if prc > PV.preday_close_price:
+                    if prc > preday_close_price:
                         icnt += 1
                 sise_up_rt = round((icnt / len(LIST_SISE_PRICE)) * 100, 2)
                 if sise_up_rt > base_rt:
@@ -465,18 +470,18 @@ def execute_deal():
                     force_rate_tf = True
                 # 횡보장 최저 최고가 전일 대비 확인
                 if sideways_tf:
-                    min_preday_rt = CF.calc_earn_rt(base_min_prc, PV.preday_close_price)
-                    max_preday_rt = CF.calc_earn_rt(base_max_prc, PV.preday_close_price)
+                    min_preday_rt = CF.calc_earn_rt(base_min_prc, preday_close_price)
+                    max_preday_rt = CF.calc_earn_rt(base_max_prc, preday_close_price)
                     # 최근 30분(150개)의 최저값이 전일보다 0.5% 이상이면 대기하자
                     if min_preday_rt > 0.5:
                         sideways_tf = False
-                        buy_msg += f'# 횡보장 최근 30분 전일대비 최저가 0.5% 이하 상승 조건 {min_preday_rt}%로 불만족. 최저가 {base_min_prc:,}({PV.preday_close_price:,}). 매수 대기'
+                        buy_msg += f'# 횡보장 최근 30분 전일대비 최저가 0.5% 이하 상승 조건 {min_preday_rt}%로 불만족. 최저가 {base_min_prc:,}({preday_close_price:,}). 매수 대기'
                         print(buy_msg)
                         print('#' + '-' * 109 )
                     # 최근 30분(150개)의 최고값이 전일보다 0.9% 이상이면 대기하자
                     if max_preday_rt > 0.9:
                         sideways_tf = False
-                        buy_msg += f'# 횡보장 최근 30분 전일대비 최고가 0.9% 이하 상승 조건 {max_preday_rt}%로 불만족. 최저가 {base_max_prc:,}({PV.preday_close_price:,}). 매수 대기'
+                        buy_msg += f'# 횡보장 최근 30분 전일대비 최고가 0.9% 이하 상승 조건 {max_preday_rt}%로 불만족. 최저가 {base_max_prc:,}({preday_close_price:,}). 매수 대기'
                         print(buy_msg)
                         print('#' + '-' * 109 )
             #------------------------------------------------------------------------                
@@ -590,7 +595,7 @@ if __name__ == "__main__":
         pre_price = 0
         while CF.get_current_time().split(' ')[1] < '152500':
             current_price = TR.get_current_price(
-                    BASE_URL, APP_KEY, APP_SECRET, TOKEN, PV.STOCK_CD
+                    BASE_URL, APP_KEY, APP_SECRET, TOKEN, STOCK_CD
                 )
             if pre_price == current_price or current_price == 0:
                 continue

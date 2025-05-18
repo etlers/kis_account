@@ -1,10 +1,19 @@
 import com_func as CF
 
 # 종목, OPEN API URL
-STOCK_CD = "229200"
-STOCK_NM = "KODEX 150 ETF"
 BASE_URL_DEV = "https://openapivts.koreainvestment.com:29443"
 BASE_URL_PROD  = "https://openapi.koreainvestment.com:9443"
+
+# 투자자 거래정보
+dict_value = CF.get_owner_config(args.owner)
+# 인자로 받은 계정으로 설정
+APP_KEY = dict_value['app_key']
+APP_SECRET = dict_value['app_secret']
+ACC_NO = dict_value['account_number']
+ORDER_QTY = dict_value['order_qty']
+STOCK_CD = dict_value['stock_code']
+STOCK_NM = dict_value['stock_name']
+SLACK_WEBHOOK_URL = dict_value['slack_webhook_url']
 
 # 시각 정의
 START_DEAL_TM = '090000'  # 매수 시작 시간

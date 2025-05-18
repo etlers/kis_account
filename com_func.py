@@ -9,10 +9,12 @@ from bs4 import BeautifulSoup
 
 import trader as TR
 
+ROOT_DIR = "/Users/etlers/Documents"
+
 
 # 거래에 관련한 모든 정보
 def get_config_json(): 
-    with open("../env/config.json", "r") as f:
+    with open(f"{ROOT_DIR}/env/config.json", "r") as f:
         return json.load(f)
 
 # 투자자 거래정보 
@@ -37,7 +39,7 @@ def wating_message(secs, msg):
 
 # 토큰 발행
 def get_token(owner, base_url, app_key, app_secret):
-    TOKEN_FILE = f"../env/token/token_cache_{owner}.json"
+    TOKEN_FILE = f"{ROOT_DIR}/env/token/token_cache_{owner}.json"
 
     """ 존재하는 액세스 토큰 삭제 """
     def delete_token():
@@ -109,7 +111,7 @@ def get_token(owner, base_url, app_key, app_secret):
     
     # 기존에 존재하는 토큰 삭제
     # 하루에 한번만 수행하면 그렇게 해도 됨
-    delete_token()
+    # delete_token()
     # 토큰 발급
     token = get_access_token()
     # 발급된 토큰 전달
@@ -213,7 +215,7 @@ def get_previous_trading_day(stock_code="005930"):
     
 
 # 슬랙으로 메세지 보내기
-def send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url):
+def send_slack_alert(order_type, stock_name, ord_qty, price, result, msg, slack_webhook_url):
     icon_ord = {
         "BUY": "🟢",
         "SELL": "🔴",
@@ -225,7 +227,7 @@ def send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_
     }.get(result, "🔔")
     
     if order_type in ('BUY','SELL'):
-        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{stock_code}`\n수량: `{ord_qty}`주\n가격: `{price:,}`원"
+        text = f"{icon_ord} *{order_type} 체결 알림*\n종목: `{stock_name}`\n수량: `{ord_qty}`주\n가격: `{price:,}`원"
         text = text + '\n\n' + f"{icon_result} {msg}"
     else:
         text = f"{icon_result} {msg}"
@@ -244,7 +246,7 @@ def send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_
 def make_for_send_msg(dict_params):
     # 슬랙 전송을 위한 인자의 구성
     order_type = dict_params['order_type'] 
-    stock_code = dict_params['stock_code']
+    stock_name = dict_params['stock_name']
     ord_qty = dict_params['ord_qty']
     price = dict_params['price']
     result = dict_params['result']
@@ -253,7 +255,7 @@ def make_for_send_msg(dict_params):
 
     # 슬랙으로 메세지 전송
     if dict_params['order_type'] == 'BUY':
-        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+        send_slack_alert(order_type, stock_name, ord_qty, price, result, msg, slack_webhook_url)
     elif dict_params['order_type'] == 'SELL':
         # 직전 매수 평균
         if dict_params['buy_avg_price'] == 0:
@@ -268,9 +270,9 @@ def make_for_send_msg(dict_params):
             result = 'DN'
             msg = f'{deal_earn_rt}% 손실!! ㅠㅠ'
 
-        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+        send_slack_alert(order_type, stock_name, ord_qty, price, result, msg, slack_webhook_url)
     else:
-        send_slack_alert(order_type, stock_code, ord_qty, price, result, msg, slack_webhook_url)
+        send_slack_alert(order_type, stock_name, ord_qty, price, result, msg, slack_webhook_url)
     # 기본 메세지 출력
     print(f"{msg}")
 
